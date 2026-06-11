@@ -1,0 +1,31 @@
+<header class="topbar">
+  <div>
+    <h1>{{ t("app.title") }}</h1>
+    <p>{{ t("app.subtitle") }}</p>
+  </div>
+  <div class="topbar-actions">
+    <form method="post" action="/settings/language" class="timezone-form">
+      <label>
+        {{ t("settings.language") }}
+        <select name="language" id="languageSelect" onchange="this.form.submit()">
+          {% for code, label in language_options.items() %}
+            <option value="{{ code }}" {% if code == current_language %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    <form method="post" action="/settings/timezone" class="timezone-form">
+      <label>
+        {{ t("settings.timezone") }}
+        <select name="timezone" id="timezoneSelect" onchange="this.form.submit()">
+          {% for timezone in timezone_options %}
+            <option value="{{ timezone }}" {% if timezone == selected_timezone %}selected{% endif %}>{{ timezone }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+    <form method="post" action="/check">
+      <button type="submit">{{ t("actions.update_expired") }}</button>
+    </form>
+  </div>
+</header>

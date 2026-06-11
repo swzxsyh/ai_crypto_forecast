@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}合约模拟预测看板{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+    {% block head_extra %}{% endblock %}
+  </head>
+  <body data-auto-refresh-seconds="{{ web_auto_refresh_seconds | default(0) }}" data-timezone="{{ selected_timezone | default('UTC') }}" data-language="{{ current_language | default('zh') }}">
+    <main class="shell">
+      {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

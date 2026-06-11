@@ -1,0 +1,135 @@
+<section class="panel advice-panel">
+  <div class="advice-head">
+    <div class="section-title">
+      <div class="section-icon">ADVICE</div>
+      <div>
+        <h2>{{ t("advice.title") }}</h2>
+        <p>{{ t("advice.subtitle") }}</p>
+      </div>
+    </div>
+  </div>
+
+  <form class="controls advice-controls" method="post" action="/advice/preview">
+    <label>
+      {{ t("field.principal") }}
+      <input name="principal" type="number" step="0.01" min="0.01" value="{{ advice_form.principal or '' }}" required>
+    </label>
+    <label>
+      {{ t("field.symbol") }}
+      <select name="symbol" id="adviceSymbolSelect" onchange="handleAdviceSymbolChange(this)" required>
+        <option value="">{{ t("select.symbol") }}</option>
+        {% for symbol in symbols %}
+          <option value="{{ symbol }}" {% if symbol == advice_form.symbol %}selected{% endif %}>{{ symbol }}</option>
+        {% endfor %}
+        <option value="custom">{{ t("select.custom") }}</option>
+      </select>
+    </label>
+    <label id="adviceSymbolCustomLabel" style="display:none">
+      {{ t("field.custom_symbol") }}
+      <input name="symbol_custom" id="adviceSymbolCustom" type="text" placeholder="{{ t('placeholder.symbol') }}">
+    </label>
+    <label>
+      {{ t("field.note") }}
+      <input name="note" type="text" value="{{ advice_form.note or '' }}" placeholder="{{ t('placeholder.note') }}">
+    </label>
+    <div class="advice-actions">
+      <button type="submit">{{ t("actions.generate_advice") }}</button>
+    </div>
+  </form>
+  <script>
+    function handleAdviceSymbolChange(sel) {
+      var label = document.getElementById('adviceSymbolCustomLabel');
+      if (label) {
+        label.style.display = sel.value === 'custom' ? '' : 'none';
+      }
+    }
+  </script>
+
+  {% if suggestion_preview %}
+    <div class="advice-preview">
+      <div>
+        <span>{{ t("advice.side") }}</span>
+        <strong>{{ suggestion_preview.side_label }} ({{ suggestion_preview.suggestion_side }})</strong>
+      </div>
+      <div>
+        <span>{{ t("advice.leverage") }}</span>
+        <strong>{{ suggestion_preview.leverage }}x</strong>
+      </div>
+      <div>
+        <span>{{ t("advice.margin") }}</span>
+        <strong>{{ "%.2f"|format(suggestion_preview.margin_amount) }} USDT</strong>
+      </div>
+      <div>
+        <span>{{ t("advice.notional") }}</span>
+        <strong>{{ "%.2f"|format(suggestion_preview.notional_value) }} USDT</strong>
+      </div>
+      <div>
+        <span>{{ t("col.tp_sl") }}</span>
+        <strong>{{ "%.4f"|format(suggestion_preview.take_profit_price) }} / {{ "%.4f"|format(suggestion_preview.stop_loss_price) }}</strong>
+      </div>
+      <div>
+        <span>{{ t("col.pnl") }}</span>
+        <strong>+{{ "%.2f"|format(suggestion_preview.expected_profit) }} / -{{ "%.2f"|format(suggestion_preview.expected_loss) }}</strong>
+      </div>
+      <div>
+        <span>{{ t("advice.expires_at") }}</span>
+        <strong class="js-utc-time" data-utc="{{ suggestion_preview.expires_at }}">{{ suggestion_preview.expires_at }}</strong>
+      </div>
+      <div>
+        <span>{{ t("advice.reason") }}</span>
+        <strong>{{ suggestion_preview.reason }}</strong>
+      </div>
+    </div>
+
+    <form method="post" action="/advice/record" class="advice-record-form">
+      <input type="hidden" name="principal" value="{{ advice_form.principal or suggestion_preview.principal }}">
+      <input type="hidden" name="symbol" value="{{ advice_form.symbol or suggestion_preview.symbol }}">
+      <input type="hidden" name="note" value="{{ advice_form.note or '' }}">
+      <button type="submit">{{ t("actions.record_advice") }}</button>
+    </form>
+  {% endif %}
+</section>
+
+<section class="table-wrap advice-table">
+  <div class="table-label"><h3>{{ t("table.advice_actions") }}</h3></div>
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t("col.recorded_at") }}</th>
+        <th>{{ t("col.symbol") }}</th>
+        <th>{{ t("field.principal") }}</th>
+        <th>{{ t("tabs.advice") }}</th>
+        <th>{{ t("col.leverage") }}</th>
+        <th>{{ t("col.margin") }}</th>
+        <th>{{ t("col.tp_sl") }}</th>
+        <th>{{ t("col.expires_at") }}</th>
+        <th>{{ t("field.note") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for action in advice_actions %}
+        <tr>
+          <td class="js-utc-time" data-utc="{{ action.created_at }}">{{ action.created_at }}</td>
+          <td>{{ action.symbol }}</td>
+          <td>{{ "%.2f"|format(action.principal) }}</td>
+          <td>{{ action.suggestion_side }}</td>
+          <td>{{ action.leverage }}x</td>
+          <td>{{ "%.2f"|format(action.margin_amount) }}</td>
+          <td>{{ "%.4f"|format(action.take_profit_price) }} / {{ "%.4f"|format(action.stop_loss_price) }}</td>
+          <td>
+            {% if action.expires_at %}
+              <span class="js-utc-time" data-utc="{{ action.expires_at }}">{{ action.expires_at }}</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>{{ action.note or '-' }}</td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="9" class="empty">{{ t("empty.advice") }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

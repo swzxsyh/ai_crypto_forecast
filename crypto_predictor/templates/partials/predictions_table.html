@@ -1,0 +1,72 @@
+<section class="table-wrap">
+  <div class="table-label"><h3>{{ t("table.predictions") }}</h3></div>
+  {% set pagination = predictions_pagination %}
+  {% set force_auto_pager = false %}
+  {% include "partials/pagination.html" %}
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t("col.prediction_time") }}</th>
+        <th>{{ t("col.expires_at") }}</th>
+        <th>{{ t("col.symbol") }}</th>
+        <th>{{ t("col.direction") }} <span class="th-tip" data-tip="{{ t('tooltip.direction') }}">?</span></th>
+        <th>{{ t("col.contract") }} <span class="th-tip" data-tip="{{ t('tooltip.contract') }}">?</span></th>
+        <th>{{ t("col.entry") }}</th>
+        <th>{{ t("col.tp_sl") }}</th>
+        <th>{{ t("col.margin") }} <span class="th-tip" data-tip="{{ t('tooltip.margin') }}">?</span></th>
+        <th>{{ t("col.leverage") }} <span class="th-tip" data-tip="{{ t('tooltip.leverage') }}">?</span></th>
+        <th>{{ t("col.pnl") }}</th>
+        <th>{{ t("col.confidence") }} <span class="th-tip" data-tip="{{ t('tooltip.confidence') }}">?</span></th>
+        <th>{{ t("col.verify") }}</th>
+        <th>{{ t("col.paper_execute") }} <span class="th-tip" data-tip="{{ t('tooltip.paper') }}">?</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>
+          <td class="js-utc-time" data-utc="{{ row.prediction_time }}">{{ row.prediction_time }}</td>
+          <td class="js-utc-time expires-cell{% if row.is_accurate is none %} pending{% endif %}" data-utc="{{ row.expires_at }}">{{ row.expires_at }}</td>
+          <td>{{ row.symbol }}</td>
+          <td><span class="tag {{ row.prediction_direction|lower }}">{{ row.prediction_direction }}</span></td>
+          <td>{{ row.position_side }}</td>
+          <td>{{ "%.4f"|format(row.entry_price or row.current_price) }}</td>
+          <td>{{ "%.4f"|format(row.take_profit_price or 0) }} / {{ "%.4f"|format(row.stop_loss_price or 0) }}</td>
+          <td>{{ "%.2f"|format(row.margin_amount or 0) }} USDT</td>
+          <td>{{ row.leverage }}x</td>
+          <td class="pnl">+{{ "%.2f"|format(row.expected_profit or 0) }} / -{{ "%.2f"|format(row.expected_loss or 0) }}</td>
+          <td>{{ row.confidence }}</td>
+          <td class="verify-icon">
+            {% if row.is_accurate is none %}
+              <span title="{{ t('status.pending') }}">...</span>
+            {% elif row.is_accurate == 1 %}
+              <span title="{{ t('status.correct') }}" class="correct">OK</span>
+            {% else %}
+              <span title="{{ t('status.incorrect') }}" class="incorrect">X</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.position_side in ["LONG", "SHORT"] %}
+              <div style="display: grid; gap: 4px; grid-template-columns: 1fr 1fr;">
+                <form method="post" action="/execute-paper" style="margin: 0;">
+                  <input type="hidden" name="prediction_id" value="{{ row.id }}">
+                  <button class="mini" type="submit" title="{{ t('tooltip.paper') }}">{{ t("actions.paper") }}</button>
+                </form>
+                <form method="post" action="/execute-live" style="margin: 0;">
+                  <input type="hidden" name="prediction_id" value="{{ row.id }}">
+                  <input type="hidden" name="confirm" value="I_UNDERSTAND_LIVE_TRADING">
+                  <button class="mini danger" type="submit" title="{{ t('tooltip.live') }}">{{ t("actions.live") }}</button>
+                </form>
+              </div>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="13" class="empty">{{ t("empty.predictions") }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

@@ -1,0 +1,44 @@
+<section class="chart-panel">
+  <div class="chart-head">
+    <div class="section-title">
+      <div class="section-icon">CHART</div>
+      <div>
+        <h2>{{ t("chart.title") }}</h2>
+        <p>{{ t("chart.subtitle") }}</p>
+      </div>
+    </div>
+    <div class="chart-filters">
+      <label class="chart-filter chart-symbol-filter">
+        {{ t("field.symbol") }}
+        <select id="chartSymbol" onchange="handleChartSymbolChange(this)">
+          <option value="">{{ t("select.all_symbols") }}</option>
+          {% for symbol in symbols %}
+            <option value="{{ symbol }}">{{ symbol }}</option>
+          {% endfor %}
+          <option value="custom">{{ t("select.custom") }}</option>
+        </select>
+      </label>
+      <label id="chartSymbolCustomLabel" class="chart-filter chart-custom-symbol-filter" style="display:none;">
+        {{ t("field.custom_symbol") }}
+        <input id="chartSymbolCustom" type="text" placeholder="{{ t('placeholder.symbol') }}">
+      </label>
+      <label class="chart-filter chart-date-filter">
+        {{ t("field.start_date") }}
+        <input id="chartStartDate" type="date">
+      </label>
+      <label class="chart-filter chart-date-filter">
+        {{ t("field.end_date") }}
+        <input id="chartEndDate" type="date">
+      </label>
+    </div>
+  </div>
+  <div id="predictionChart" class="chart"></div>
+  <script>
+    function handleChartSymbolChange(sel) {
+      var label = document.getElementById('chartSymbolCustomLabel');
+      if (label) {
+        label.style.display = sel.value === 'custom' ? '' : 'none';
+      }
+    }
+  </script>
+</section>

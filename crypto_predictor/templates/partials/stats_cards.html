@@ -1,0 +1,20 @@
+<section class="stats">
+  <div>
+    <span>{{ t("stats.checked") }}</span>
+    <strong>{{ stats.total_checked }}</strong>
+  </div>
+  <div>
+    <span>{{ t("stats.correct") }}</span>
+    <strong>{{ stats.total_accurate }}</strong>
+  </div>
+  <div>
+    <span>{{ t("stats.accuracy") }}</span>
+    <strong>
+      {% if stats.overall_accuracy is not none %}
+        {{ "%.2f"|format(stats.overall_accuracy * 100) }}%
+      {% else %}
+        -
+      {% endif %}
+    </strong>
+  </div>
+</section>

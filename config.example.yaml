@@ -1,0 +1,168 @@
+# 复制为 config.yaml 后填写真实配置。
+# config.yaml 已被 .gitignore 忽略，避免把 API Key 提交到代码仓库。
+
+# 推荐写法：所有 AI 服务商都放在 providers 下面。
+# 使用 OpenAI 官方地址时，base_url 可以留空或删除。
+# 使用中转站时，把 base_url 改成中转站提供的 OpenAI-compatible 地址，通常以 /v1 结尾。
+providers:
+  openai:
+    api_key: "sk-your-openai-api-key"
+    model: "gpt-5.5"
+    base_url: ""
+
+  # 预留给后续 Anthropic 接入；当前代码第一版还没有实现 anthropic_provider。
+  anthropic:
+    api_key: ""
+    model: ""
+    base_url: ""
+
+database:
+  backend: "sqlite"
+  path: "crypto_predictions.sqlite3"
+  postgres_dsn: ""
+
+exchange:
+  # Binance 行情接口网络配置。访问 api.binance.com 超时时可提高 timeout 或配置代理。
+  timeout_ms: 30000
+
+  # 默认自动探测本机 Clash 常见 HTTP/Mixed 端口。
+  auto_proxy: true
+  auto_proxy_ports:
+    - 7890
+    - 7897
+    - 7899
+    - 10809
+    - 1080
+
+  # 如果你的 Clash 端口固定，也可以直接显式配置，显式配置优先于自动探测。
+  proxy: ""
+  http_proxy: ""
+  https_proxy: ""
+
+crypto:
+  # 默认交易对。直接运行 `python main.py predict` 时使用它。
+  symbol: "BTC/USDT"
+
+  # 候选交易对列表。可以用 `python main.py list-symbols` 查看，
+  # 也可以用 `python main.py predict --all-symbols` 一次预测全部。
+  symbols:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+    - "BNB/USDT"
+
+  timeframe: "1h"
+
+  # Binance Spot Kline 官方支持 1s；分钟级最小是 1m。
+  # 默认下拉只放常用周期；如需秒级，把 "1s" 加入列表即可。
+  timeframes:
+    - "1m"
+    - "3m"
+    - "5m"
+    - "15m"
+    - "30m"
+    - "1h"
+    - "2h"
+    - "4h"
+    - "6h"
+    - "8h"
+    - "12h"
+    - "1d"
+
+  kline_limit: 24
+  exchange_id: "binance"
+  market_data_cache_ttl_seconds: 5
+  market_data_retry_attempts: 3
+  market_data_retry_initial_delay_seconds: 0.5
+
+contract:
+  # 模拟合约参数，仅用于记录和估算，不会下单。
+  # AI 可以在这个范围内建议保证金和杠杆，系统会再次校验并计算预计盈亏。
+  default_margin: 100
+  min_margin: 0
+  max_margin: 500
+  default_leverage: 3
+  max_leverage: 10
+
+binance:
+  # 真实账户或测试网账户 Key。默认 sandbox: true。
+  # 强烈建议先使用 Binance Testnet，只给测试网 Key。
+  api_key: ""
+  secret: ""
+  sandbox: true
+  market_type: "future"
+
+trading:
+  # paper = 只记录模拟订单；live = 允许走 Binance broker。
+  # 即使这里改成 live，也必须 enable_live_trading: true 且命令行传入确认文本才会真实下单。
+  mode: "paper"
+  enable_live_trading: false
+  live_confirm_text: "I_UNDERSTAND_LIVE_TRADING"
+
+  # 是否在开仓后提交止盈/止损条件单。默认 false，避免不了解账户持仓模式时误挂单。
+  place_bracket_orders: false
+
+  # one_way 或 hedge。Hedge Mode 会传 positionSide=LONG/SHORT。
+  position_side_mode: "one_way"
+
+risk:
+  max_margin_per_trade: 50
+  max_leverage: 3
+  allowed_symbols:
+    - "BTC/USDT"
+    - "ETH/USDT"
+    - "SOL/USDT"
+    - "BNB/USDT"
+
+validation:
+  sideways_threshold_pct: 0.002
+
+sentiment:
+  fear_greed_enabled: true
+  fear_greed_api_url: "https://api.alternative.me/fng/?limit=1&format=json"
+  fear_greed_timeout_seconds: 5
+
+web:
+  # Web 启动配置；不传 CLI 参数时，python main.py web 会使用这里的默认值。
+  host: "127.0.0.1"
+  port: 8000
+  debug: false
+
+  # 页面自动刷新间隔（秒），0 表示关闭自动刷新。
+  auto_refresh_seconds: 20
+
+  # 页面显示时区（数据库依然保存 UTC）。
+  default_timezone: "Asia/Shanghai"
+  timezones:
+    - "UTC"
+    - "Asia/Shanghai"
+    - "Asia/Tokyo"
+    - "Europe/London"
+    - "America/New_York"
+
+  # Flask session secret key，建议改成随机长字符串。
+  secret_key: "change-this-to-a-random-secret"
+
+automation:
+  # 是否在命令行 auto-run 之外启用默认自动参数（用于集中配置）。
+  enabled: false
+  interval_seconds: 3600
+  predict_all_symbols: true
+  execute_paper: true
+  check_accuracy: true
+  model_type: "openai"
+
+log:
+  # 日志目录（相对于运行目录）。
+  dir: "logs"
+  # 日志级别：DEBUG / INFO / WARNING / ERROR
+  level: "INFO"
+  # 保留最近 N 天的日志文件，更早的自动删除。
+  retention_days: 30
+
+# 也可以直接写任意环境变量，系统真实环境变量仍然优先。
+# env:
+#   OPENAI_API_KEY: "sk-your-openai-api-key"
+#   OPENAI_BASE_URL: "https://your-relay.example.com/v1"
+#   BINANCE_API_KEY: ""
+#   BINANCE_SECRET: ""

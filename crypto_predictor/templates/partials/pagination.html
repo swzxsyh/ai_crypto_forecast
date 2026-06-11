@@ -1,0 +1,26 @@
+{% if pagination.total_pages > 1 %}
+  <nav class="pager" aria-label="Pagination">
+    <span class="pager-summary">
+      {{ t("pagination.summary", page=pagination.page, total_pages=pagination.total_pages, total_items=pagination.total_items) }}
+    </span>
+    <div class="pager-actions">
+      {% if pagination.has_previous %}
+        <a class="pager-link" href="{{ page_url(pagination.page_param, pagination.previous_page) }}"
+           {% if force_auto_pager | default(false) %}data-force-auto="1"{% endif %}>
+          {{ t("pagination.previous") }}
+        </a>
+      {% else %}
+        <span class="pager-link disabled">{{ t("pagination.previous") }}</span>
+      {% endif %}
+
+      {% if pagination.has_next %}
+        <a class="pager-link" href="{{ page_url(pagination.page_param, pagination.next_page) }}"
+           {% if force_auto_pager | default(false) %}data-force-auto="1"{% endif %}>
+          {{ t("pagination.next") }}
+        </a>
+      {% else %}
+        <span class="pager-link disabled">{{ t("pagination.next") }}</span>
+      {% endif %}
+    </div>
+  </nav>
+{% endif %}

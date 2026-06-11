@@ -1,0 +1,225 @@
+<section class="panel auto-panel">
+  <div class="auto-head">
+    <div class="section-title">
+      <div class="section-icon">AUTO</div>
+      <div>
+        <h2>{{ t("auto.title") }}</h2>
+        <p>{{ t("auto.subtitle") }}</p>
+      </div>
+    </div>
+    <div class="auto-state {{ 'running' if auto_status.running else 'stopped' }}">
+      {% if auto_status.running %}{{ t("auto.running") }}{% else %}{{ t("auto.stopped") }}{% endif %}
+    </div>
+  </div>
+
+  <div class="auto-meta">
+    <div>
+      <span>{{ t("auto.started_at") }}</span>
+      {% if auto_status.started_at %}
+      <strong class="js-utc-time" data-utc="{{ auto_status.started_at }}">{{ auto_status.started_at }}</strong>
+      {% else %}
+      <strong>-</strong>
+      {% endif %}
+    </div>
+    <div>
+      <span>{{ t("auto.last_started") }}</span>
+      {% if auto_status.last_cycle_started_at %}
+      <strong class="js-utc-time" data-utc="{{ auto_status.last_cycle_started_at }}">{{
+        auto_status.last_cycle_started_at }}</strong>
+      {% else %}
+      <strong>-</strong>
+      {% endif %}
+    </div>
+    <div>
+      <span>{{ t("auto.last_finished") }}</span>
+      {% if auto_status.last_cycle_finished_at %}
+      <strong class="js-utc-time" data-utc="{{ auto_status.last_cycle_finished_at }}">{{
+        auto_status.last_cycle_finished_at }}</strong>
+      {% else %}
+      <strong>-</strong>
+      {% endif %}
+    </div>
+    <div>
+      <span>{{ t("auto.total_cycles") }}</span>
+      <strong>{{ auto_log_stats.total_cycles }}</strong>
+    </div>
+    <div>
+      <span>{{ t("auto.ok_error") }}</span>
+      <strong>{{ auto_log_stats.ok_cycles }} / {{ auto_log_stats.error_cycles }}</strong>
+    </div>
+    <div>
+      <span>{{ t("auto.avg_accuracy") }}</span>
+      <strong>
+        {% if auto_log_stats.avg_direction_accuracy is not none %}
+        {{ "%.2f"|format(auto_log_stats.avg_direction_accuracy * 100) }}%
+        {% else %}
+        -
+        {% endif %}
+      </strong>
+    </div>
+  </div>
+
+  <form method="post" action="/auto/toggle" class="auto-form-wrap">
+    <div class="auto-form-row">
+      <label>
+        {{ t("auto.interval_seconds") }}
+        <input name="interval_seconds" type="number" min="10" value="{{ auto_status.config.interval_seconds or 3600 }}">
+      </label>
+      <label>
+        <span style="display: inline-block; white-space: nowrap;">
+          {{ t("auto.max_cycles") }}
+          <span class="th-tip" data-tip="{{ t('auto.max_cycles_hint') }}">?</span>
+        </span>
+        <input name="max_cycles" type="number" min="0" value="{{ auto_status.config.max_cycles or 0 }}">
+      </label>
+      <label>
+        {{ t("field.timeframe") }}
+        <select name="timeframe">
+          {% for timeframe in timeframes %}
+          <option value="{{ timeframe }}" {% if timeframe==(auto_status.config.timeframe or default_timeframe)
+            %}selected{% endif %}>{{ timeframe }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        {{ t("field.kline_limit") }}
+        <input name="limit" type="number" min="1" value="{{ auto_status.config.limit or default_limit }}">
+      </label>
+      <label>
+        {{ t("field.model") }}
+        <select name="model_type">
+          <option value="openai" {% if (auto_status.config.model_type or 'openai' )=='openai' %}selected{% endif %}>
+            OpenAI</option>
+          <option value="anthropic" {% if (auto_status.config.model_type or 'openai' )=='anthropic' %}selected{% endif
+            %}>Anthropic</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="auto-form-row">
+      {%- set cur_syms = auto_status.config.symbols or [] %}
+      {%- set cur_list = cur_syms | list %}
+      {%- set all_list = symbols | list %}
+      {%- if cur_list == all_list or cur_list | length == 0 %}
+      {%- set preset_val = "all" %}
+      {%- elif cur_list | length == 1 and cur_list[0] in symbols %}
+      {%- set preset_val = cur_list[0] %}
+      {%- else %}
+      {%- set preset_val = "custom" %}
+      {%- endif %}
+      <label style="flex: 1;">
+        {{ t("auto.symbols") }}
+        <select name="symbols_preset" id="autoSymbolsPreset" onchange="handleAutoSymbolChange(this)">
+          <option value="all" {% if preset_val=='all' %}selected{% endif %}>{{ t("select.all_symbols") }}</option>
+          {% for sym in symbols %}
+          <option value="{{ sym }}" {% if preset_val==sym %}selected{% endif %}>{{ sym }}</option>
+          {% endfor %}
+          <option value="custom" {% if preset_val=='custom' %}selected{% endif %}>{{ t("select.custom") }}</option>
+        </select>
+      </label>
+      <label id="autoSymbolsCustomLabel" style="flex: 2; {% if preset_val != 'custom' %}display:none{% endif %}">
+        {{ t("field.custom_symbol") }}
+        <input name="symbols_custom" id="autoSymbolsCustom" type="text" placeholder="XRP/USDT,DOGE/USDT"
+          value="{{ cur_list | join(',') if preset_val == 'custom' else '' }}">
+      </label>
+    </div>
+
+    <div class="auto-form-row auto-form-actions-row">
+      <div class="auto-toggles">
+        <label class="check">
+          <input name="execute_paper" type="checkbox" {% if auto_status.config.execute_paper is not sameas false
+            %}checked{% endif %}>
+          {{ t("auto.execute_paper") }}
+        </label>
+        <label class="check auto-live-toggle">
+          <input name="execute_live" type="checkbox" {% if auto_status.config.execute_live is sameas true %}checked{%
+            endif %}>
+          <span class="live-label">{{ t("auto.execute_live") }}</span>
+        </label>
+        <label class="check">
+          <input name="check_accuracy" type="checkbox" {% if auto_status.config.check_accuracy is not sameas false
+            %}checked{% endif %}>
+          {{ t("auto.check_accuracy") }}
+        </label>
+        <label class="check">
+          <input name="allow_overlap" type="checkbox" {% if auto_status.config.allow_overlap is sameas true %}checked{%
+            endif %}>
+          {{ t("auto.allow_overlap") }} <span class="th-tip" data-tip="{{ t('auto.allow_overlap_hint') }}">?</span>
+        </label>
+      </div>
+      <label class="auto-margin-limit">
+        <span class="auto-margin-limit-label">
+          {{ t("field.margin_limit") }} <span class="th-tip" data-tip="{{ t('tooltip.margin_limit') }}">?</span>
+        </span>
+        <input name="max_margin_per_trade" type="number" min="0" step="0.01"
+          value="{{ auto_status.config.max_margin_per_trade or '' }}" placeholder="{{ t('placeholder.margin_limit') }}">
+      </label>
+      <div class="auto-actions">
+        {% if auto_status.running %}
+        <button class="danger" type="submit">{{ t("actions.stop") }}</button>
+        {% else %}
+        <button type="submit">{{ t("actions.start") }}</button>
+        {% endif %}
+      </div>
+    </div>
+  </form>
+</section>
+
+<section class="table-wrap auto-log-table">
+  <div class="table-label">
+    <h3>{{ t("table.auto_logs") }}</h3>
+  </div>
+  {% set pagination = auto_logs_pagination %}
+  {% set force_auto_pager = true %}
+  {% include "partials/pagination.html" %}
+  <table>
+    <thead>
+      <tr>
+        <th>{{ t("auto.last_started") }}</th>
+        <th>{{ t("col.status") }}</th>
+        <th>{{ t("col.params") }}</th>
+        <th>{{ t("col.predictions_count") }}</th>
+        <th>{{ t("col.paper_orders") }}</th>
+        <th>{{ t("col.live_orders") }}</th>
+        <th>{{ t("col.accuracy_check") }}</th>
+        <th>{{ t("col.global_accuracy") }}</th>
+        <th>{{ t("col.error") }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for log in auto_logs %}
+      <tr>
+        <td class="js-utc-time" data-utc="{{ log.cycle_started_at }}">{{ log.cycle_started_at }}</td>
+        <td><span class="tag {{ 'ok' if log.status == 'ok' else 'error' }}">{{ log.status }}</span></td>
+        <td>
+          {{ log.timeframe }} / {{ log.kline_limit }} / {{ log.model_type }}
+          <br>
+          {{ log.interval_seconds }}s
+        </td>
+        <td>{{ log.predictions_created }}</td>
+        <td>{{ log.paper_orders_ok }} / {{ log.paper_orders_total }}</td>
+        <td>{{ log.live_orders_ok | default(0) }} / {{ log.live_orders_total | default(0) }}</td>
+        <td>
+          {% if log.direction_accuracy is not none %}
+          {{ log.checked_count }} / {{ "%.2f"|format(log.direction_accuracy * 100) }}%
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td>
+          {% if log.overall_accuracy is not none %}
+          {{ log.overall_checked }} / {{ "%.2f"|format(log.overall_accuracy * 100) }}%
+          {% else %}
+          -
+          {% endif %}
+        </td>
+        <td>{{ log.error_message or '-' }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="empty">{{ t("empty.auto_logs") }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
