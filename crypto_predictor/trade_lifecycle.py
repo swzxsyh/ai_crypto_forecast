@@ -1,4 +1,4 @@
-﻿"""Trade lifecycle manager for expiry-based position closing."""
+"""Trade lifecycle manager for expiry-based position closing."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from crypto_predictor.broker.binance_broker import close_binance_position
 from crypto_predictor.broker.models import CloseOrderRequest, CloseOrderResult
 from crypto_predictor.broker.paper_broker import close_paper_order
 from crypto_predictor.config import DB_PATH
-from crypto_predictor.repositories import get_repository
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.time_utils import from_iso, to_iso, utc_now
 from crypto_predictor.validator import fetch_actual_price_at_or_after
 

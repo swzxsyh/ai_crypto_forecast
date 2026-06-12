@@ -1,4 +1,4 @@
-# AI Crypto Predictor
+﻿# AI Crypto Predictor
 
 Local crypto contract simulation and AI prediction dashboard.
 
@@ -77,7 +77,7 @@ database:
 Repository boundary:
 
 ```python
-from crypto_predictor.repositories import get_repository
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 
 repo = get_repository()
 repo.init_schema()
@@ -101,7 +101,6 @@ Then run:
 python main.py init-db
 ```
 
-PostgreSQL uses `psycopg` and PostgreSQL-specific SQL such as `%s` placeholders and `RETURNING id`.
 PostgreSQL uses `psycopg` and PostgreSQL-specific SQL such as `%s` placeholders and `RETURNING id`.
 
 For MySQL 8 on an empty database:
@@ -159,7 +158,9 @@ crypto_predictor/market_data.py market data payload builder
 crypto_predictor/sentiment.py   Fear & Greed Index provider
 crypto_predictor/ai/            AI provider implementations
 crypto_predictor/contract.py    simulated contract enrichment
-crypto_predictor/database.py    persistence compatibility facade
+crypto_predictor/domain/         domain ports, including repository contracts
+crypto_predictor/infrastructure/persistence/ database adapters and repository factory
+crypto_predictor/database.py    legacy SQLite DAO plus compatibility facade
 crypto_predictor/auto_runner.py scheduled cycle logic
 crypto_predictor/auto_task_manager.py web-controlled background task
 crypto_predictor/broker/        paper/live execution and risk checks
@@ -175,7 +176,7 @@ crypto_predictor/static/        CSS and JavaScript
 The project now has explicit boundaries for future upgrades:
 
 - Database backend: `crypto_predictor.infrastructure.database_backends`
-- Repository interface: `crypto_predictor.repositories`
+- Repository port: crypto_predictor.domain.repositories$([Environment]::NewLine)- Repository adapters/factory: `crypto_predictor.infrastructure.persistence`
 - Task queue: `crypto_predictor.infrastructure.task_queue`
 - Market data cache: `crypto_predictor.infrastructure.cache`
 - Retry policy: `crypto_predictor.infrastructure.retry`
@@ -256,4 +257,8 @@ Prediction logging:
 - Binance/OHLCV failures are logged under the market stage with hints for rate limits, IP blocking, proxy, or network congestion.
 - Fear & Greed failures are warnings only; the system degrades to pure OHLCV mode for that prediction.
 - CLI auto-run records a failed cycle and continues to the next interval instead of exiting.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 

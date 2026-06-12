@@ -1,4 +1,4 @@
-﻿"""Prediction orchestration service."""
+"""Prediction orchestration service."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from crypto_predictor.ai.predictor import get_ai_prediction
 from crypto_predictor.config import DB_PATH, DEFAULT_LIMIT, DEFAULT_SYMBOL, DEFAULT_TIMEFRAME
 from crypto_predictor.contract import enrich_contract_metrics
-from crypto_predictor.database import save_prediction
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.market_data import fetch_latest_ohlcv
 from crypto_predictor.models import ModelType
 
@@ -48,7 +48,10 @@ def run_prediction_once(
         raise
 
     try:
-        prediction_id = save_prediction(market_data, prediction, model_type=model_type, db_path=db_path)
+        repo = get_repository()
+        if hasattr(repo, "db_path"):
+            repo.db_path = db_path
+        prediction_id = repo.save_prediction(market_data, prediction, model_type=model_type)
         logger.info("Prediction saved: id=%s symbol=%s current_price=%s", prediction_id, symbol, market_data.current_price)
     except Exception:
         logger.exception("Prediction failed in database stage: symbol=%s", symbol)

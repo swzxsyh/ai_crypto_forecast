@@ -21,7 +21,7 @@ from crypto_predictor.config import (
     DEFAULT_SYMBOLS,
     DEFAULT_TIMEFRAME,
 )
-from crypto_predictor.database import init_db
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.service import run_predictions_for_symbols
 from crypto_predictor.time_utils import utc_now
 from crypto_predictor.trade_lifecycle import close_expired_trade_orders, get_next_trade_order_expiry
@@ -191,7 +191,10 @@ def run_auto_loop(
 ) -> dict[str, Any]:
     """Run auto cycles at a fixed interval; cycles=0 means forever."""
 
-    init_db(db_path)
+    repo = get_repository()
+    if hasattr(repo, "db_path"):
+        repo.db_path = db_path
+    repo.init_schema()
     chosen_symbols = tuple(symbols) if symbols else (DEFAULT_SYMBOL,)
 
     history: list[dict[str, Any]] = []

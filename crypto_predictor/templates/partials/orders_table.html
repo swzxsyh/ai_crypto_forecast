@@ -6,14 +6,14 @@
         <th>{{ t("col.created_at") }}</th>
         <th>{{ t("col.mode") }}</th>
         <th>{{ t("col.symbol") }}</th>
-        <th>{{ t("col.direction") }}</th>
+        <th>{{ t("col.direction") }} <span class="th-tip" data-tip="{{ t('tooltip.order_direction') }}">?</span></th>
         <th>{{ t("col.amount") }}</th>
         <th>{{ t("col.leverage") }}</th>
-        <th>{{ t("col.status") }}</th>
+        <th>{{ t("col.status") }} <span class="th-tip" data-tip="{{ t('tooltip.order_status') }}">?</span></th>
         <th>Expires</th>
-        <th>Close</th>
-        <th>Exit</th>
-        <th>{{ t("col.message") }}</th>
+        <th>Close <span class="th-tip" data-tip="{{ t('tooltip.order_close') }}">?</span></th>
+        <th>Exit <span class="th-tip" data-tip="{{ t('tooltip.order_exit') }}">?</span></th>
+        <th>{{ t("col.message") }} <span class="th-tip" data-tip="{{ t('tooltip.order_message') }}">?</span></th>
       </tr>
     </thead>
     <tbody>

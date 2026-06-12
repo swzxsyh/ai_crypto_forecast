@@ -1,4 +1,4 @@
-﻿"""Command-line interface."""
+"""Command-line interface."""
 
 from __future__ import annotations
 
@@ -21,9 +21,8 @@ from crypto_predictor.config import (
 )
 from crypto_predictor.config import DB_PATH, DEFAULT_LIMIT, DEFAULT_SIDEWAYS_THRESHOLD_PCT
 from crypto_predictor.config import DEFAULT_SYMBOL, DEFAULT_SYMBOLS, DEFAULT_TIMEFRAME
-from crypto_predictor.database import get_overall_accuracy
 from crypto_predictor.exchange import warm_exchange_market_cache
-from crypto_predictor.repositories import get_repository
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.service import run_prediction_once, run_predictions_for_symbols
 from crypto_predictor.validator import check_and_update_accuracy
 
@@ -206,7 +205,7 @@ def main() -> None:
         return
 
     if args.command == "stats":
-        result = get_overall_accuracy()
+        result = get_repository().get_overall_accuracy()
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 

@@ -1,4 +1,4 @@
-# Local secrets and machine-specific config
+﻿# Local secrets and machine-specific config
 config.yaml
 config.yml
 *.local.yaml
@@ -16,15 +16,24 @@ venv/
 env/
 ENV/
 
-# Packaging and test output
+# Python tooling, packaging, and test output
 build/
 dist/
 *.egg-info/
+*.egg
+pip-wheel-metadata/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.tox/
+.nox/
+.hypothesis/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
+.cache/
+.ipynb_checkpoints/
 
 # Runtime data
 *.sqlite
@@ -33,11 +42,21 @@ htmlcov/
 logs/
 *.log
 *.err
+*.pid
+*.tmp
+*.bak
 web.log
 web.err
 web-*.log
 web-*.err
 _live_dashboard.html
+
+# Frontend dependencies and logs, if a build step is added later
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
 # OS and editor noise
 .DS_Store

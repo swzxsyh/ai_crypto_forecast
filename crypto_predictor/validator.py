@@ -1,4 +1,4 @@
-﻿"""Prediction expiry validation."""
+"""Prediction expiry validation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any
 from crypto_predictor.config import DB_PATH, DEFAULT_EXCHANGE_ID, DEFAULT_SIDEWAYS_THRESHOLD_PCT
 from crypto_predictor.exchange import build_exchange
 from crypto_predictor.models import Direction
-from crypto_predictor.repositories import get_repository
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.time_utils import from_iso, to_iso, utc_now
 
 logger = logging.getLogger(__name__)

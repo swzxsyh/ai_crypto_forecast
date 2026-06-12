@@ -130,6 +130,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tooltip.confidence": "AI 对该次预测的置信度，0-100，数值越高越确定",
         "tooltip.paper": "记录一笔模拟成交，用于追踪假设操作的盈亏，不连接真实交易所",
         "tooltip.live": "真实成交，谨慎操作",
+        "tooltip.order_direction": "订单执行方向，来自预测建议的开仓方向或交易所下单方向。",
+        "tooltip.order_status": "下单结果状态。ok/filled 表示执行成功，error/failed/rejected 表示执行失败或被拒绝。",
+        "tooltip.order_close": "平仓状态。open 表示仍在跟踪，closed 表示已按到期或规则平仓，error 表示执行或记录异常。",
+        "tooltip.order_exit": "平仓或退出价格。未平仓、未获取到成交价或模拟订单未产生退出价时显示 -。",
+        "tooltip.order_message": "执行或平仓返回消息。优先显示平仓消息，否则显示开仓/下单消息，用于排查成功、失败和拒单原因。",
     },
     "en": {
         "app.title": "Contract Simulation Forecast Dashboard",
@@ -248,6 +253,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "tooltip.confidence": "AI confidence for this prediction, 0-100",
         "tooltip.paper": "Record a simulated fill for tracking hypothetical P/L",
         "tooltip.live": "Real execution. Use with caution.",
+        "tooltip.order_direction": "Order execution direction from the prediction side or exchange order side.",
+        "tooltip.order_status": "Order placement result. ok/filled means successful; error/failed/rejected means failed or rejected.",
+        "tooltip.order_close": "Close tracking state. open is still tracked, closed is closed by expiry or rule, and error means execution or recording failed.",
+        "tooltip.order_exit": "Close or exit price. A dash means the order is still open, no fill price was returned, or the paper order has no exit price yet.",
+        "tooltip.order_message": "Execution or close message. Close message is shown first; otherwise the entry/order message is shown for troubleshooting.",
     },
 }
 

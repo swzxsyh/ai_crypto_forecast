@@ -18,7 +18,7 @@ from crypto_predictor.config import (
     AUTO_RUN_PREDICT_ALL_SYMBOLS,
 )
 from crypto_predictor.config import DB_PATH, DEFAULT_LIMIT, DEFAULT_SYMBOL, DEFAULT_SYMBOLS, DEFAULT_TIMEFRAME
-from crypto_predictor.database import get_overall_accuracy, save_auto_run_log
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 from crypto_predictor.infrastructure.task_status import default_task_status_store
 from crypto_predictor.time_utils import to_iso, utc_now
 from crypto_predictor.trade_lifecycle import close_expired_trade_orders, get_next_trade_order_expiry
@@ -149,6 +149,11 @@ class AutoTaskManager:
                 },
             }
 
+    def _repository(self):
+        repo = get_repository()
+        if hasattr(repo, "db_path"):
+            repo.db_path = self.db_path
+        return repo
     def _run_loop(self, config: AutoTaskConfig) -> None:
         if config.allow_overlap:
             self._run_overlapping_loop(config)
@@ -338,7 +343,8 @@ class AutoTaskManager:
                 live_ok = sum(1 for item in live_orders if item.get("status") == "ok")
                 live_error = sum(1 for item in live_orders if item.get("status") != "ok")
                 accuracy_check = cycle_result.get("accuracy_check") or {}
-                overall = get_overall_accuracy(db_path=self.db_path)
+                repo = self._repository()
+                overall = repo.get_overall_accuracy()
 
                 log_payload.update(
                     {
@@ -384,7 +390,7 @@ class AutoTaskManager:
 
             cycle_finished = utc_now()
             log_payload["cycle_finished_at"] = to_iso(cycle_finished)
-            log_id = save_auto_run_log(log_payload, db_path=self.db_path)
+            log_id = self._repository().save_auto_run_log(log_payload)
             self._set_cycle_finished(to_iso(cycle_finished), log_id)
             self._increment_completed_cycles()
             return cycle_finished

@@ -33,7 +33,7 @@ def _use_repository_backend() -> bool:
 
 
 def _configured_repository():
-    from crypto_predictor.repositories import get_repository
+    from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 
     return get_repository()
 

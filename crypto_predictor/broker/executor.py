@@ -1,4 +1,4 @@
-"""交易执行编排。"""
+﻿"""Trading execution orchestration."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from crypto_predictor.broker.models import ExecutionMode, OrderRequest, OrderRes
 from crypto_predictor.broker.paper_broker import execute_paper_order
 from crypto_predictor.broker.risk_guard import validate_order_request
 from crypto_predictor.config import DB_PATH, RISK_MAX_MARGIN_PER_TRADE, TRADING_MODE
-from crypto_predictor.database import get_prediction_by_id, get_latest_prediction, save_trade_order
+from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 
 
 def execute_prediction_order(
@@ -21,11 +21,14 @@ def execute_prediction_order(
     max_margin_per_trade: float | None = None,
     db_path: str = DB_PATH,
 ) -> dict[str, Any]:
-    """把一条预测记录转换为模拟或真实订单。"""
+    """Convert a prediction row into a paper or live order."""
 
-    row = get_prediction_by_id(prediction_id, db_path=db_path) if prediction_id else get_latest_prediction(db_path=db_path)
+    repo = get_repository()
+    if hasattr(repo, "db_path"):
+        repo.db_path = db_path
+    row = repo.get_prediction_by_id(prediction_id) if prediction_id else repo.get_latest_prediction()
     if row is None:
-        raise RuntimeError("没有找到可执行的预测记录")
+        raise RuntimeError("No executable prediction record found")
 
     execution_mode = mode or normalize_mode(TRADING_MODE)
     request = build_order_request(row, execution_mode)
@@ -38,7 +41,7 @@ def execute_prediction_order(
     else:
         result = execute_binance_order(request, confirm=confirm)
 
-    trade_order_id = save_trade_order(prediction_id=int(row["id"]), result=result, db_path=db_path)
+    trade_order_id = repo.save_trade_order(prediction_id=int(row["id"]), result=result)
     return {
         "trade_order_id": trade_order_id,
         "prediction_id": int(row["id"]),
@@ -47,7 +50,7 @@ def execute_prediction_order(
 
 
 def build_order_request(row: Any, mode: ExecutionMode) -> OrderRequest:
-    """从数据库预测记录构建下单请求。"""
+    """Build an order request from a prediction row."""
 
     entry_price = float(row["entry_price"] or row["current_price"])
     notional_value = float(row["notional_value"] or 0)
@@ -85,16 +88,16 @@ def cap_paper_margin(request: OrderRequest, max_margin_per_trade: float | None =
 
 
 def normalize_mode(value: str) -> ExecutionMode:
-    """规范化执行模式。"""
+    """Normalize execution mode."""
 
     if value == "paper":
         return "paper"
     if value == "live":
         return "live"
-    raise ValueError(f"不支持的交易模式: {value}")
+    raise ValueError(f"Unsupported trading mode: {value}")
 
 
 def result_to_json(result: OrderResult) -> str:
-    """序列化执行结果。"""
+    """Serialize an order result."""
 
     return json.dumps(result.__dict__, ensure_ascii=False, default=str)
