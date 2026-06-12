@@ -222,3 +222,10 @@ Market metadata cache:
 - The Web app and CLI auto-run warm ccxt exchange markets once at startup.
 - Scheduled cycles reuse the in-memory exchange instance, so hourly OHLCV fetches do not intentionally reload Binance exchangeInfo.
 
+
+Sentiment and technical weighting:
+
+- Crypto Fear & Greed Index is included as daily macro sentiment context when enabled.
+- The prediction prompt treats Extreme Fear as risk-off by default, not a blind contrarian long signal.
+- Short-term predictions lean primarily on OHLCV, RSI, and volume structure; sentiment is auxiliary context.
+

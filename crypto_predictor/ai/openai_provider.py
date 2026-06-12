@@ -1,4 +1,4 @@
-"""OpenAI 预测实现。"""
+﻿"""OpenAI prediction provider."""
 
 from __future__ import annotations
 
@@ -26,41 +26,41 @@ PREDICTION_SCHEMA: dict[str, Any] = {
         "direction": {
             "type": "string",
             "enum": ["UP", "DOWN", "SIDEWAYS"],
-            "description": "预测下一个周期的价格方向",
+            "description": "Predicted price direction for the next timeframe period.",
         },
         "target_price": {
             "type": "number",
-            "description": "预测到期时的目标价格",
+            "description": "Expected price at prediction expiry.",
         },
         "confidence": {
             "type": "integer",
             "minimum": 0,
             "maximum": 100,
-            "description": "预测置信度，0 到 100 的整数",
+            "description": "Prediction confidence from 0 to 100.",
         },
         "position_side": {
             "type": "string",
             "enum": ["LONG", "SHORT", "NO_TRADE"],
-            "description": "模拟合约方向，UP 对应 LONG，DOWN 对应 SHORT，震荡或低置信度为 NO_TRADE",
+            "description": "Simulated contract side. UP maps to LONG, DOWN maps to SHORT, SIDEWAYS/low confidence maps to NO_TRADE.",
         },
         "margin_amount": {
             "type": "number",
             "minimum": 0,
-            "description": "建议使用的模拟保证金，单位 USDT",
+            "description": "Suggested simulated margin in USDT.",
         },
         "leverage": {
             "type": "integer",
             "minimum": 0,
             "maximum": 125,
-            "description": "建议模拟杠杆倍数；NO_TRADE 时为 0",
+            "description": "Suggested simulated leverage. Must be 0 for NO_TRADE.",
         },
         "take_profit_price": {
             "type": "number",
-            "description": "模拟止盈价格",
+            "description": "Simulated take-profit price.",
         },
         "stop_loss_price": {
             "type": "number",
-            "description": "模拟止损价格",
+            "description": "Simulated stop-loss price.",
         },
     },
     "required": [
@@ -77,21 +77,51 @@ PREDICTION_SCHEMA: dict[str, Any] = {
 }
 
 
+DEVELOPER_PROMPT = """
+You are a senior crypto quantitative strategy analyst. This system records simulated predictions only; it is not financial advice and must not imply real trading instructions.
+
+You must predict the next payload.timeframe close direction using a multi-factor process. Never mechanically derive a prediction from a single indicator.
+
+Rules for combining Crypto Fear & Greed Index with OHLCV:
+1. Correct sentiment definition:
+   - Very low Fear & Greed, for example < 25 / Extreme Fear, means the broad market is risk-off. It is NOT a blind long or bottom-fishing signal. Price can continue grinding lower or remain illiquid.
+   - A low sentiment value can support a reversal thesis only when OHLCV confirms bottoming behavior, such as high-volume capitulation and stabilization, clear rebound structure, or severe RSI oversold rebound. Otherwise, follow the OHLCV trend.
+   - Very high Fear & Greed, for example > 75 / Extreme Greed, means overheated conditions. Unless OHLCV shows a strong high-volume breakout, watch for pullback/liquidation-wick risk.
+2. Timeframe alignment:
+   - Fear & Greed is a daily macro sentiment input. For a 1h short-term prediction, use it only as background context.
+   - The short-term decision weight must lean about 70% on OHLCV curve structure, RSI, and volume behavior. Sentiment is auxiliary macro context.
+3. Technical confirmation:
+   - Use payload.technical_summary.rsi_14, recent price change, recent higher/lower closes, and recent_vs_previous_volume_ratio when present.
+   - In Extreme Fear, avoid LONG unless technical structure clearly shows rebound confirmation.
+   - In Extreme Greed, avoid aggressive LONG unless breakout volume and price structure confirm continuation.
+4. Risk discipline:
+   - If direction is SIDEWAYS or confidence < 40, position_side must be NO_TRADE and margin_amount/leverage must be 0.
+   - Respect contract_rules exactly: margin_amount <= max_margin_usdt and leverage <= max_leverage.
+   - LONG take_profit_price must be above current price and stop_loss_price below current price. SHORT is the opposite.
+
+Return only a strict JSON object matching the schema. No Markdown, no explanation, no extra fields.
+""".strip()
+
+
+USER_PROMPT_PREFIX = """
+Analyze the following market payload using the multi-factor rules. Output only prediction JSON.
+""".strip()
+
+
 def get_openai_prediction(market_data: MarketData) -> Prediction:
-    """调用 OpenAI Responses API 获取严格 JSON 预测。"""
+    """Call OpenAI Responses API and return a validated prediction."""
 
     try:
         from openai import OpenAI
     except ImportError as exc:
-        raise RuntimeError("缺少 openai SDK，请先执行：pip install openai") from exc
+        raise RuntimeError("Missing openai SDK. Install with: pip install openai") from exc
 
     if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("缺少 OPENAI_API_KEY 环境变量，无法调用 OpenAI API。")
+        raise RuntimeError("Missing OPENAI_API_KEY environment variable")
 
     client_kwargs: dict[str, Any] = {}
     base_url = os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL or "")
     if base_url:
-        # 兼容中转站、私有网关或 OpenAI-compatible API；通常应以 /v1 结尾。
         client_kwargs["base_url"] = base_url
 
     client = OpenAI(**client_kwargs)
@@ -107,26 +137,12 @@ def get_openai_prediction(market_data: MarketData) -> Prediction:
         "no_trade_when_sideways_or_low_confidence": True,
     }
 
-    developer_prompt = (
-        "你是一个谨慎的量化研究助手，只做模拟预测，不给出投资建议。"
-        "请基于用户提供的 OHLCV 数据，预测下一个 timeframe 周期结束时的价格方向，"
-        "并给出模拟 USDT 线性合约方案。"
-        "必须严格遵守 contract_rules：保证金不能超过 max_margin_usdt，杠杆不能超过 max_leverage。"
-        "如果方向为 SIDEWAYS 或置信度低于 40，position_side 必须为 NO_TRADE，margin_amount 和 leverage 必须为 0。"
-        "LONG 的止盈价应高于当前价、止损价应低于当前价；SHORT 相反。"
-        "必须输出严格符合 JSON Schema 的对象，不要输出解释、Markdown 或额外字段。"
-    )
-    user_prompt = (
-        "请根据以下市场数据做一次模拟预测。"
-        "注意：这不是交易指令，只用于记录和事后验证。\n\n"
-        "Use payload.sentiment.crypto_fear_greed_index as an auxiliary sentiment input when present.\n\n"
-        f"{json.dumps(payload, ensure_ascii=False)}"
-    )
+    user_prompt = f"{USER_PROMPT_PREFIX}\n\n{json.dumps(payload, ensure_ascii=False)}"
 
     response = client.responses.create(
         model=model_name,
         input=[
-            {"role": "developer", "content": developer_prompt},
+            {"role": "developer", "content": DEVELOPER_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
         text={
@@ -145,7 +161,7 @@ def get_openai_prediction(market_data: MarketData) -> Prediction:
 
 
 def parse_openai_json_response(response: Any) -> dict[str, Any]:
-    """从 OpenAI SDK 响应中解析 JSON。"""
+    """Parse a JSON object from the OpenAI SDK response."""
 
     output_text = getattr(response, "output_text", None)
 
@@ -159,21 +175,21 @@ def parse_openai_json_response(response: Any) -> dict[str, Any]:
         output_text = "\n".join(texts)
 
     if not output_text:
-        raise RuntimeError("OpenAI 响应中没有可解析的文本内容。")
+        raise RuntimeError("OpenAI response did not contain parseable text")
 
     try:
         parsed = json.loads(output_text)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"OpenAI 未返回合法 JSON：{output_text}") from exc
+        raise RuntimeError(f"OpenAI did not return valid JSON: {output_text}") from exc
 
     if not isinstance(parsed, dict):
-        raise RuntimeError(f"OpenAI 返回的 JSON 不是对象：{parsed}")
+        raise RuntimeError(f"OpenAI returned JSON that is not an object: {parsed}")
 
     return parsed
 
 
 def validate_prediction_dict(data: dict[str, Any]) -> Prediction:
-    """对 AI 返回值做本地二次校验，防止脏数据进入数据库。"""
+    """Local validation before saving AI output."""
 
     direction = data.get("direction")
     position_side = data.get("position_side")
@@ -185,29 +201,29 @@ def validate_prediction_dict(data: dict[str, Any]) -> Prediction:
     stop_loss_price = to_non_negative_float(data.get("stop_loss_price"), "stop_loss_price")
 
     if direction not in {"UP", "DOWN", "SIDEWAYS"}:
-        raise ValueError(f"非法 direction: {direction}")
+        raise ValueError(f"Invalid direction: {direction}")
 
     if position_side not in {"LONG", "SHORT", "NO_TRADE"}:
-        raise ValueError(f"非法 position_side: {position_side}")
+        raise ValueError(f"Invalid position_side: {position_side}")
 
     if not isinstance(confidence, int):
-        raise ValueError(f"confidence 必须是整数: {confidence}")
+        raise ValueError(f"confidence must be an integer: {confidence}")
 
     if confidence < 0 or confidence > 100:
-        raise ValueError(f"confidence 必须在 0-100 之间: {confidence}")
+        raise ValueError(f"confidence must be between 0 and 100: {confidence}")
 
     if not isinstance(leverage, int):
-        raise ValueError(f"leverage 必须是整数: {leverage}")
+        raise ValueError(f"leverage must be an integer: {leverage}")
 
     if leverage < 0:
-        raise ValueError(f"leverage 不能小于 0: {leverage}")
+        raise ValueError(f"leverage cannot be negative: {leverage}")
 
     will_trade = direction != "SIDEWAYS" and confidence >= 40 and position_side in {"LONG", "SHORT"}
     if will_trade:
         if take_profit_price <= 0:
-            raise ValueError(f"take_profit_price 蹇呴』澶т簬 0: {take_profit_price}")
+            raise ValueError(f"take_profit_price must be greater than 0: {take_profit_price}")
         if stop_loss_price <= 0:
-            raise ValueError(f"stop_loss_price 蹇呴』澶т簬 0: {stop_loss_price}")
+            raise ValueError(f"stop_loss_price must be greater than 0: {stop_loss_price}")
 
     return Prediction(
         direction=direction,
@@ -222,28 +238,28 @@ def validate_prediction_dict(data: dict[str, Any]) -> Prediction:
 
 
 def to_positive_float(value: Any, field_name: str) -> float:
-    """转换正数浮点字段。"""
+    """Convert a positive float field."""
 
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"非法 {field_name}: {value}") from exc
+        raise ValueError(f"Invalid {field_name}: {value}") from exc
 
     if result <= 0:
-        raise ValueError(f"{field_name} 必须大于 0: {result}")
+        raise ValueError(f"{field_name} must be greater than 0: {result}")
 
     return result
 
 
 def to_non_negative_float(value: Any, field_name: str) -> float:
-    """转换非负浮点字段。"""
+    """Convert a non-negative float field."""
 
     try:
         result = float(value)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"非法 {field_name}: {value}") from exc
+        raise ValueError(f"Invalid {field_name}: {value}") from exc
 
     if result < 0:
-        raise ValueError(f"{field_name} 不能小于 0: {result}")
+        raise ValueError(f"{field_name} cannot be negative: {result}")
 
     return result
