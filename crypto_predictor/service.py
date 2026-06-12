@@ -1,7 +1,8 @@
-"""业务编排层。"""
+﻿"""Prediction orchestration service."""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from typing import Any, Iterable
 
@@ -12,6 +13,8 @@ from crypto_predictor.database import save_prediction
 from crypto_predictor.market_data import fetch_latest_ohlcv
 from crypto_predictor.models import ModelType
 
+logger = logging.getLogger(__name__)
+
 
 def run_prediction_once(
     symbol: str = DEFAULT_SYMBOL,
@@ -20,12 +23,36 @@ def run_prediction_once(
     model_type: ModelType = "openai",
     db_path: str = DB_PATH,
 ) -> dict[str, Any]:
-    """获取行情 -> AI 预测 -> 写入数据库。"""
+    """Fetch market data, call AI, enrich contract metrics, and save prediction."""
 
-    market_data = fetch_latest_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
-    raw_prediction = get_ai_prediction(market_data, model_type=model_type)
-    prediction = enrich_contract_metrics(raw_prediction, entry_price=market_data.current_price)
-    prediction_id = save_prediction(market_data, prediction, model_type=model_type, db_path=db_path)
+    logger.info("Prediction started: symbol=%s timeframe=%s limit=%s model=%s", symbol, timeframe, limit, model_type)
+    try:
+        market_data = fetch_latest_ohlcv(symbol=symbol, timeframe=timeframe, limit=limit)
+    except Exception:
+        logger.exception("Prediction failed before AI stage: symbol=%s stage=market_data", symbol)
+        raise
+
+    try:
+        logger.info("AI prediction stage started: symbol=%s model=%s", symbol, model_type)
+        raw_prediction = get_ai_prediction(market_data, model_type=model_type)
+        prediction = enrich_contract_metrics(raw_prediction, entry_price=market_data.current_price)
+        logger.info(
+            "AI prediction stage succeeded: symbol=%s direction=%s side=%s confidence=%s",
+            symbol,
+            prediction.direction,
+            prediction.position_side,
+            prediction.confidence,
+        )
+    except Exception:
+        logger.exception("Prediction failed in AI/contract stage: symbol=%s", symbol)
+        raise
+
+    try:
+        prediction_id = save_prediction(market_data, prediction, model_type=model_type, db_path=db_path)
+        logger.info("Prediction saved: id=%s symbol=%s current_price=%s", prediction_id, symbol, market_data.current_price)
+    except Exception:
+        logger.exception("Prediction failed in database stage: symbol=%s", symbol)
+        raise
 
     return {
         "prediction_id": prediction_id,
@@ -44,10 +71,12 @@ def run_predictions_for_symbols(
     model_type: ModelType = "openai",
     db_path: str = DB_PATH,
 ) -> list[dict[str, Any]]:
-    """按顺序为多个交易对创建预测。"""
+    """Create predictions sequentially for multiple symbols."""
 
+    symbol_list = tuple(symbols)
+    logger.info("Batch prediction started: symbols=%s timeframe=%s limit=%s", list(symbol_list), timeframe, limit)
     results: list[dict[str, Any]] = []
-    for symbol in symbols:
+    for symbol in symbol_list:
         results.append(
             run_prediction_once(
                 symbol=symbol,
@@ -57,4 +86,5 @@ def run_predictions_for_symbols(
                 db_path=db_path,
             )
         )
+    logger.info("Batch prediction finished: created=%s symbols=%s", len(results), list(symbol_list))
     return results

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from statistics import mean
 from typing import Any
@@ -23,6 +24,8 @@ from crypto_predictor.models import Candle, MarketData
 from crypto_predictor.sentiment import fetch_fear_greed_index
 from crypto_predictor.time_utils import to_iso, utc_now
 
+logger = logging.getLogger(__name__)
+
 
 def fetch_latest_ohlcv(
     symbol: str = DEFAULT_SYMBOL,
@@ -35,19 +38,29 @@ def fetch_latest_ohlcv(
     cache_key = f"ohlcv:{exchange_id}:{symbol}:{timeframe}:{limit}"
     cached = default_cache.get(cache_key)
     if cached is not None:
+        logger.info("Market data cache hit: exchange=%s symbol=%s timeframe=%s limit=%s", exchange_id, symbol, timeframe, limit)
         return cached
 
+    logger.info("[Binance market stage] Fetching OHLCV: exchange=%s symbol=%s timeframe=%s limit=%s", exchange_id, symbol, timeframe, limit)
     exchange = build_exchange(exchange_id)
-    with observed("market_data.fetch_ohlcv", exchange_id=exchange_id, symbol=symbol, timeframe=timeframe, limit=limit):
-        raw_candles = retry_call(
-            lambda: exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit),
-            attempts=MARKET_DATA_RETRY_ATTEMPTS,
-            initial_delay_seconds=MARKET_DATA_RETRY_INITIAL_DELAY_SECONDS,
-        )
+    try:
+        with observed("market_data.fetch_ohlcv", exchange_id=exchange_id, symbol=symbol, timeframe=timeframe, limit=limit):
+            raw_candles = retry_call(
+                lambda: exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit),
+                attempts=MARKET_DATA_RETRY_ATTEMPTS,
+                initial_delay_seconds=MARKET_DATA_RETRY_INITIAL_DELAY_SECONDS,
+            )
+    except Exception as exc:
+        logger.error("[Binance market stage] Prediction round failed for %s. Reason: %s", symbol, exc)
+        logger.error("Hint: check Binance rate limit, IP blocking, proxy settings, or temporary network congestion.")
+        raise
 
     if not raw_candles:
-        raise RuntimeError(f"No OHLCV data returned for {exchange_id} {symbol} {timeframe}")
+        message = f"No OHLCV data returned for {exchange_id} {symbol} {timeframe}"
+        logger.error("[Binance market stage] %s", message)
+        raise RuntimeError(message)
 
+    logger.info("[Binance market stage] OHLCV fetched successfully: symbol=%s candles=%s", symbol, len(raw_candles))
     candles = [
         Candle(
             timestamp_ms=int(item[0]),
@@ -103,7 +116,6 @@ def build_technical_summary(candles: list[Candle]) -> dict[str, Any]:
     """Compute lightweight indicators from the candles for prompt grounding."""
 
     closes = [candle.close for candle in candles]
-    volumes = [candle.volume for candle in candles]
     if not candles or not closes:
         return {}
 

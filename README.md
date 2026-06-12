@@ -229,3 +229,11 @@ Sentiment and technical weighting:
 - The prediction prompt treats Extreme Fear as risk-off by default, not a blind contrarian long signal.
 - Short-term predictions lean primarily on OHLCV, RSI, and volume structure; sentiment is auxiliary context.
 
+
+Prediction logging:
+
+- Scheduled cycles log a clear start/end banner and cycle parameters.
+- Binance/OHLCV failures are logged under the market stage with hints for rate limits, IP blocking, proxy, or network congestion.
+- Fear & Greed failures are warnings only; the system degrades to pure OHLCV mode for that prediction.
+- CLI auto-run records a failed cycle and continues to the next interval instead of exiting.
+

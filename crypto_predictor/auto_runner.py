@@ -1,7 +1,8 @@
-"""自动循环执行：定时预测、验证与纸面模拟。"""
+﻿"""Scheduled auto runner: prediction, execution, and validation cycles."""
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime
 from typing import Any, Iterable
@@ -21,8 +22,10 @@ from crypto_predictor.config import (
     DEFAULT_TIMEFRAME,
 )
 from crypto_predictor.database import init_db
-from crypto_predictor.service import run_prediction_once, run_predictions_for_symbols
+from crypto_predictor.service import run_predictions_for_symbols
 from crypto_predictor.validator import check_and_update_accuracy
+
+logger = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -30,7 +33,7 @@ def _now_iso() -> str:
 
 
 def should_execute_paper(prediction_result: dict[str, Any]) -> bool:
-    """只有 LONG/SHORT 信号才执行纸面模拟。"""
+    """Only LONG/SHORT signals should create paper orders."""
 
     prediction = prediction_result.get("prediction", {})
     position_side = str(prediction.get("position_side", ""))
@@ -38,7 +41,7 @@ def should_execute_paper(prediction_result: dict[str, Any]) -> bool:
 
 
 def should_execute_live(prediction_result: dict[str, Any], min_confidence: int = 40) -> bool:
-    """真实下单额外要求：LONG/SHORT 且置信度 >= min_confidence。"""
+    """Live execution requires LONG/SHORT and minimum confidence."""
 
     prediction = prediction_result.get("prediction", {})
     position_side = str(prediction.get("position_side", ""))
@@ -56,23 +59,48 @@ def run_auto_cycle(
     check_accuracy: bool = AUTO_RUN_CHECK_ACCURACY,
     max_margin_per_trade: float | None = None,
 ) -> dict[str, Any]:
-    """执行一次自动任务周期。"""
+    """Run one auto task cycle."""
 
-    prediction_results = run_predictions_for_symbols(
-        symbols=symbols,
-        timeframe=timeframe,
-        limit=limit,
-        model_type=model_type,
+    symbol_list = tuple(symbols)
+    logger.info("================== Start scheduled prediction cycle ==================")
+    logger.info(
+        "Cycle params: symbols=%s timeframe=%s limit=%s model=%s paper=%s live=%s check_accuracy=%s",
+        list(symbol_list),
+        timeframe,
+        limit,
+        model_type,
+        execute_paper,
+        execute_live,
+        check_accuracy,
     )
+
+    try:
+        prediction_results = run_predictions_for_symbols(
+            symbols=symbol_list,
+            timeframe=timeframe,
+            limit=limit,
+            model_type=model_type,
+        )
+        logger.info("Prediction stage completed: created=%s", len(prediction_results))
+    except Exception as exc:
+        logger.error("This prediction cycle failed in market/AI stage: %s", exc)
+        logger.error("Hint: if the error mentions Binance, check rate limit, IP blocking, proxy settings, or network congestion.")
+        logger.info("================== Scheduled prediction cycle skipped ==================")
+        raise
 
     paper_results: list[dict[str, Any]] = []
     if execute_paper:
+        logger.info("Paper execution stage started")
         for item in prediction_results:
             if not should_execute_paper(item):
                 continue
             prediction_id = int(item["prediction_id"])
             try:
-                paper_result = execute_prediction_order(prediction_id=prediction_id, mode="paper", max_margin_per_trade=max_margin_per_trade)
+                paper_result = execute_prediction_order(
+                    prediction_id=prediction_id,
+                    mode="paper",
+                    max_margin_per_trade=max_margin_per_trade,
+                )
                 paper_results.append(
                     {
                         "prediction_id": prediction_id,
@@ -80,29 +108,33 @@ def run_auto_cycle(
                         "trade_order_id": paper_result["trade_order_id"],
                     }
                 )
+                logger.info("Paper execution succeeded: prediction_id=%s trade_order_id=%s", prediction_id, paper_result["trade_order_id"])
             except Exception as exc:  # noqa: BLE001
-                paper_results.append(
-                    {
-                        "prediction_id": prediction_id,
-                        "status": "error",
-                        "error": str(exc),
-                    }
-                )
+                paper_results.append({"prediction_id": prediction_id, "status": "error", "error": str(exc)})
+                logger.error("Paper execution failed: prediction_id=%s error=%s", prediction_id, exc)
 
     live_results: list[dict[str, Any]] = []
     if execute_live:
+        logger.info("Live execution stage started")
         for item in prediction_results:
             if not should_execute_live(item):
                 prediction = item.get("prediction", {})
-                live_results.append({
-                    "prediction_id": item.get("prediction_id"),
-                    "status": "skipped",
-                    "reason": f"置信度 {prediction.get('confidence', 0)} < 40，跳过真实下单",
-                })
+                live_results.append(
+                    {
+                        "prediction_id": item.get("prediction_id"),
+                        "status": "skipped",
+                        "reason": f"confidence {prediction.get('confidence', 0)} < 40 or no LONG/SHORT signal",
+                    }
+                )
                 continue
             prediction_id = int(item["prediction_id"])
             try:
-                live_result = execute_prediction_order(prediction_id=prediction_id, mode="live", confirm="I_UNDERSTAND_LIVE_TRADING", max_margin_per_trade=max_margin_per_trade)
+                live_result = execute_prediction_order(
+                    prediction_id=prediction_id,
+                    mode="live",
+                    confirm="I_UNDERSTAND_LIVE_TRADING",
+                    max_margin_per_trade=max_margin_per_trade,
+                )
                 live_results.append(
                     {
                         "prediction_id": prediction_id,
@@ -110,26 +142,30 @@ def run_auto_cycle(
                         "trade_order_id": live_result["trade_order_id"],
                     }
                 )
+                logger.info("Live execution succeeded: prediction_id=%s trade_order_id=%s", prediction_id, live_result["trade_order_id"])
             except Exception as exc:  # noqa: BLE001
-                live_results.append(
-                    {
-                        "prediction_id": prediction_id,
-                        "status": "error",
-                        "error": str(exc),
-                    }
-                )
+                live_results.append({"prediction_id": prediction_id, "status": "error", "error": str(exc)})
+                logger.error("Live execution failed: prediction_id=%s error=%s", prediction_id, exc)
 
     check_result: dict[str, Any] | None = None
     if check_accuracy:
-        check_result = check_and_update_accuracy()
+        try:
+            logger.info("Accuracy check stage started")
+            check_result = check_and_update_accuracy()
+            logger.info("Accuracy check completed: %s", check_result)
+        except Exception as exc:
+            logger.error("Accuracy check failed: %s", exc)
+            raise
 
-    return {
+    result = {
         "started_at": _now_iso(),
         "predictions_created": len(prediction_results),
         "paper_orders": paper_results,
         "live_orders": live_results,
         "accuracy_check": check_result,
     }
+    logger.info("================== Scheduled prediction cycle finished ==================")
+    return result
 
 
 def run_auto_loop(
@@ -144,7 +180,7 @@ def run_auto_loop(
     check_accuracy: bool = AUTO_RUN_CHECK_ACCURACY,
     db_path: str = DB_PATH,
 ) -> dict[str, Any]:
-    """按固定间隔执行自动任务；cycles=0 表示无限循环。"""
+    """Run auto cycles at a fixed interval; cycles=0 means forever."""
 
     init_db(db_path)
     chosen_symbols = tuple(symbols) if symbols else (DEFAULT_SYMBOL,)
@@ -158,15 +194,28 @@ def run_auto_loop(
             cycle_no += 1
             cycle_start = time.time()
 
-            result = run_auto_cycle(
-                symbols=chosen_symbols,
-                timeframe=timeframe,
-                limit=limit,
-                model_type=model_type,
-                execute_paper=execute_paper,
-                execute_live=execute_live,
-                check_accuracy=check_accuracy,
-            )
+            try:
+                result = run_auto_cycle(
+                    symbols=chosen_symbols,
+                    timeframe=timeframe,
+                    limit=limit,
+                    model_type=model_type,
+                    execute_paper=execute_paper,
+                    execute_live=execute_live,
+                    check_accuracy=check_accuracy,
+                )
+            except Exception as exc:  # noqa: BLE001
+                result = {
+                    "started_at": _now_iso(),
+                    "status": "error",
+                    "error": str(exc),
+                    "predictions_created": 0,
+                    "paper_orders": [],
+                    "live_orders": [],
+                    "accuracy_check": None,
+                }
+                logger.error("Auto loop cycle failed and will continue next interval: cycle=%s error=%s", cycle_no, exc)
+
             result["cycle"] = cycle_no
             history.append(result)
 
@@ -176,6 +225,7 @@ def run_auto_loop(
             elapsed = time.time() - cycle_start
             sleep_seconds = max(0.0, interval_seconds - elapsed)
             if sleep_seconds > 0:
+                logger.info("Waiting %.2f seconds before next auto cycle", sleep_seconds)
                 time.sleep(sleep_seconds)
     except KeyboardInterrupt:
         interrupted = True
@@ -196,7 +246,7 @@ def run_auto_loop(
 
 
 def resolve_auto_symbols(all_symbols: bool, symbols: Iterable[str] | None) -> tuple[str, ...]:
-    """根据参数决定自动任务使用的交易对。"""
+    """Resolve auto task symbols from CLI/config flags."""
 
     if all_symbols:
         return DEFAULT_SYMBOLS
