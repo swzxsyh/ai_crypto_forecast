@@ -216,3 +216,9 @@ These are generated locally and ignored:
 ## Safety
 
 Live execution is guarded by config and confirmation text. Keep `trading.enable_live_trading: false` unless you fully understand the broker path and account mode.
+
+Market metadata cache:
+
+- The Web app and CLI auto-run warm ccxt exchange markets once at startup.
+- Scheduled cycles reuse the in-memory exchange instance, so hourly OHLCV fetches do not intentionally reload Binance exchangeInfo.
+

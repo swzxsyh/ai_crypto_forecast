@@ -1,8 +1,10 @@
-"""交易所客户端工厂。"""
+﻿"""交易所客户端工厂。"""
 
 from __future__ import annotations
 
+import logging
 import socket
+import threading
 from typing import Any
 
 from crypto_predictor.config import (
@@ -15,12 +17,22 @@ from crypto_predictor.config import (
     EXCHANGE_TIMEOUT_MS,
 )
 
+logger = logging.getLogger(__name__)
+_EXCHANGE_CACHE_LOCK = threading.RLock()
+_EXCHANGE_CACHE: dict[str, Any] = {}
+
 
 def build_exchange(exchange_id: str = DEFAULT_EXCHANGE_ID) -> Any:
-    """创建 ccxt 交易所实例。
+    """创建并缓存 ccxt 交易所实例。
 
-    这里只读取公开行情，不配置交易 API Key。代理和超时可通过 YAML/环境变量配置。
+    公开行情只需要一个复用的 exchange 实例。实例一旦 load_markets 成功，
+    后续 fetch_ohlcv 会复用内存里的 markets，避免每个定时周期重复请求 exchangeInfo。
     """
+
+    with _EXCHANGE_CACHE_LOCK:
+        cached = _EXCHANGE_CACHE.get(exchange_id)
+        if cached is not None:
+            return cached
 
     try:
         import ccxt
@@ -45,7 +57,29 @@ def build_exchange(exchange_id: str = DEFAULT_EXCHANGE_ID) -> Any:
         # ccxt 也支持统一 proxy 字段，保留给部分网络环境使用。
         config["proxy"] = EXCHANGE_PROXY
 
-    return exchange_class(config)
+    exchange = exchange_class(config)
+    with _EXCHANGE_CACHE_LOCK:
+        cached = _EXCHANGE_CACHE.get(exchange_id)
+        if cached is not None:
+            return cached
+        _EXCHANGE_CACHE[exchange_id] = exchange
+        return exchange
+
+
+def warm_exchange_market_cache(exchange_id: str = DEFAULT_EXCHANGE_ID) -> bool:
+    """启动时预热交易对元数据，并保存在内存里的 ccxt 实例上。"""
+
+    exchange = build_exchange(exchange_id)
+    if getattr(exchange, "markets", None):
+        return True
+
+    try:
+        exchange.load_markets()
+        logger.info("Exchange market cache warmed", extra={"exchange_id": exchange_id})
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Exchange market cache warmup failed: %s", exc, extra={"exchange_id": exchange_id})
+        return False
 
 
 def build_proxy_config() -> dict[str, str]:

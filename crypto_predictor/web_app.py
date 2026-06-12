@@ -1,4 +1,4 @@
-"""本地 Web 看板。"""
+﻿"""Local Flask dashboard."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ from crypto_predictor.database import (
     list_recent_user_advice_actions,
     save_user_advice_action,
 )
+from crypto_predictor.exchange import warm_exchange_market_cache
 from crypto_predictor.i18n import SUPPORTED_LANGUAGES, normalize_language, translate
 from crypto_predictor.infrastructure.database_backends import get_database_backend
 from crypto_predictor.infrastructure.task_status import default_task_status_store
@@ -43,7 +44,7 @@ from crypto_predictor.validator import check_and_update_accuracy
 
 
 def resolve_timezone_options() -> tuple[str, ...]:
-    """过滤无效时区配置，避免页面出现非法值。"""
+    """Return valid timezone options."""
 
     valid: list[str] = []
     for item in WEB_TIMEZONE_OPTIONS:
@@ -65,13 +66,14 @@ AUTO_LOGS_PAGE_SIZE = 20
 
 
 def create_app() -> Flask:
-    """创建 Flask 应用。"""
+    """Create Flask app."""
 
     app = Flask(__name__)
     app.secret_key = WEB_SECRET_KEY
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     app.jinja_env.auto_reload = True
+    warm_exchange_market_cache()
     manager = AutoTaskManager()
     app.extensions["auto_task_manager"] = manager
     maybe_start_auto_worker(app, manager)
@@ -137,11 +139,11 @@ def create_app() -> Flask:
     def parse_advice_form_inputs() -> tuple[str, float, str]:
         symbol = request.form.get("symbol", "").strip()
         
-        # 处理自定义货币对
+        # 澶勭悊鑷畾涔夎揣甯佸
         if symbol == "custom":
             symbol = request.form.get("symbol_custom", "").strip()
             if not symbol:
-                raise ValueError("请输入自定义交易对（例：XRP/USDT）")
+                raise ValueError("请输入自定义交易对，例如 XRP/USDT")
         
         if not symbol:
             raise ValueError("请先选择币种")
@@ -254,16 +256,16 @@ def create_app() -> Flask:
                 result = manager.stop()
                 payload = {"ok": bool(result.get("stopped")), "action": "stop", "result": result}
                 if result.get("stopped"):
-                    flash("自动任务已停止。", "success")
+                    flash("自动任务已停止", "success")
                 else:
-                    flash("自动任务当前未运行。", "error")
+                    flash("自动任务当前未运行", "error")
             else:
                 start_result = manager.start(parse_auto_config_from_form())
                 payload = {"ok": bool(start_result.get("started")), "action": "start", "result": start_result}
                 if start_result.get("started"):
-                    flash("自动任务已启动。", "success")
+                    flash("自动任务已启动", "success")
                 else:
-                    flash("自动任务已在运行中。", "error")
+                    flash("自动任务已在运行中", "error")
         except Exception as exc:
             payload = {"ok": False, "error": format_user_error(exc)}
             flash(format_user_error(exc), "error")
@@ -277,7 +279,7 @@ def create_app() -> Flask:
             symbol, principal, note = parse_advice_form_inputs()
             prediction = get_latest_prediction_for_symbol(symbol)
             if prediction is None:
-                flash(f"{symbol} 暂无预测记录，请先创建预测。", "error")
+                flash(f"{symbol} 暂无预测记录，请先创建预测", "error")
                 return redirect(url_for("dashboard"))
 
             suggestion = build_advice_from_prediction(prediction, principal)
@@ -295,7 +297,7 @@ def create_app() -> Flask:
             symbol, principal, note = parse_advice_form_inputs()
             prediction = get_latest_prediction_for_symbol(symbol)
             if prediction is None:
-                flash(f"{symbol} 暂无预测记录，请先创建预测。", "error")
+                flash(f"{symbol} 暂无预测记录，请先创建预测", "error")
                 return redirect(url_for("dashboard"))
 
             suggestion = build_advice_from_prediction(prediction, principal)
@@ -320,7 +322,7 @@ def create_app() -> Flask:
                     "note": note,
                 }
             )
-            flash(f"建议已记录（ID={advice_id}）。", "success")
+            flash(f"建议已记录，ID={advice_id}", "success")
         except Exception as exc:
             flash(format_user_error(exc), "error")
         return redirect(url_for("dashboard"))
@@ -330,11 +332,11 @@ def create_app() -> Flask:
         all_symbols = request.form.get("all_symbols") == "on"
         symbol = request.form.get("symbol", "").strip()
         
-        # 处理自定义货币对
+        # 澶勭悊鑷畾涔夎揣甯佸
         if symbol == "custom":
             symbol = request.form.get("symbol_custom", "").strip()
             if not symbol:
-                flash("请输入自定义交易对（例：XRP/USDT）", "error")
+                flash("请输入自定义交易对，例如 XRP/USDT", "error")
                 return redirect(url_for("dashboard"))
         
         timeframe = request.form.get("timeframe", DEFAULT_TIMEFRAME).strip() or DEFAULT_TIMEFRAME
@@ -349,7 +351,7 @@ def create_app() -> Flask:
                     flash("请选择或输入交易对", "error")
                     return redirect(url_for("dashboard"))
                 run_prediction_once(symbol=symbol, timeframe=timeframe, limit=limit, model_type=model_type)
-            flash("预测已创建。", "success")
+            flash("预测已创建", "success")
         except Exception as exc:
             flash(format_user_error(exc), "error")
 
@@ -359,7 +361,7 @@ def create_app() -> Flask:
     def check():
         try:
             check_and_update_accuracy()
-            flash("到期结果已更新。", "success")
+            flash("到期结果已更新", "success")
         except Exception as exc:
             flash(format_user_error(exc), "error")
         return redirect(url_for("dashboard"))
@@ -370,7 +372,7 @@ def create_app() -> Flask:
         prediction_id = int(prediction_id_value) if prediction_id_value else None
         try:
             execute_prediction_order(prediction_id=prediction_id, mode="paper")
-            flash("纸面订单已记录。", "success")
+            flash("纸面订单已记录", "success")
         except Exception as exc:
             flash(format_user_error(exc), "error")
         return redirect(url_for("dashboard"))
@@ -378,20 +380,20 @@ def create_app() -> Flask:
     @app.post("/execute-live")
     def execute_live():
         if not ENABLE_LIVE_TRADING:
-            flash("真实交易未启用（ENABLE_LIVE_TRADING=false）。", "error")
+            flash("真实交易未启用，ENABLE_LIVE_TRADING=false", "error")
             return redirect(url_for("dashboard"))
 
         prediction_id_value = request.form.get("prediction_id", "").strip()
         confirm_text = request.form.get("confirm", "").strip()
         
         if confirm_text != LIVE_CONFIRM_TEXT:
-            flash(f"确认文本不匹配，请输入确认信息以执行实盘交易。", "error")
+            flash("确认文本不匹配，请输入正确确认信息以执行实盘交易", "error")
             return redirect(url_for("dashboard"))
 
         prediction_id = int(prediction_id_value) if prediction_id_value else None
         try:
             result = execute_prediction_order(prediction_id=prediction_id, mode="live", confirm=confirm_text)
-            flash(f"真实订单已执行（Trade Order ID: {result['trade_order_id']}）。", "success")
+            flash(f"真实订单已执行，Trade Order ID: {result['trade_order_id']}", "success")
         except Exception as exc:
             flash(format_user_error(exc), "error")
         return redirect(url_for("dashboard"))
@@ -475,7 +477,7 @@ def page_url(page_param: str, page: int) -> str:
 
 
 def maybe_start_auto_worker(app: Flask, manager: AutoTaskManager) -> None:
-    """按配置启用后台自动任务。"""
+    """Start background auto worker when configured."""
 
     if not AUTO_RUN_ENABLED:
         return
@@ -491,7 +493,7 @@ def maybe_start_auto_worker(app: Flask, manager: AutoTaskManager) -> None:
 
 
 def format_user_error(exc: Exception) -> str:
-    """把底层异常转换成页面可读的错误提示。"""
+    """Format low-level errors for dashboard display."""
 
     message = str(exc)
     if "api.binance.com" in message or "RequestTimeout" in message or "timed out" in message:
@@ -508,3 +510,5 @@ def format_user_error(exc: Exception) -> str:
 
 
 app = create_app()
+
+
