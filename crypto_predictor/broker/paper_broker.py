@@ -1,12 +1,12 @@
-"""纸面模拟交易执行。"""
+﻿"""Paper trading execution."""
 
 from __future__ import annotations
 
-from crypto_predictor.broker.models import OrderRequest, OrderResult
+from crypto_predictor.broker.models import CloseOrderRequest, CloseOrderResult, OrderRequest, OrderResult
 
 
 def execute_paper_order(request: OrderRequest) -> OrderResult:
-    """只记录模拟成交，不访问交易所。"""
+    """Record a simulated entry order without touching an exchange."""
 
     side = "buy" if request.position_side == "LONG" else "sell"
     return OrderResult(
@@ -20,7 +20,7 @@ def execute_paper_order(request: OrderRequest) -> OrderResult:
         entry_order_id=f"paper-entry-{request.prediction_id}",
         take_profit_order_id=f"paper-tp-{request.prediction_id}",
         stop_loss_order_id=f"paper-sl-{request.prediction_id}",
-        message="纸面模拟完成，没有发送真实订单。",
+        message="Paper order recorded; no real order was sent.",
         raw_response={
             "prediction_id": request.prediction_id,
             "position_side": request.position_side,
@@ -29,5 +29,29 @@ def execute_paper_order(request: OrderRequest) -> OrderResult:
             "entry_price": request.entry_price,
             "take_profit_price": request.take_profit_price,
             "stop_loss_price": request.stop_loss_price,
+        },
+    )
+
+
+def close_paper_order(request: CloseOrderRequest, exit_price: float | None = None) -> CloseOrderResult:
+    """Record a simulated close order."""
+
+    side = "sell" if request.entry_side == "buy" else "buy"
+    return CloseOrderResult(
+        mode="paper",
+        status="closed",
+        exchange="paper",
+        symbol=request.symbol,
+        side=side,
+        amount=request.amount,
+        close_order_id=f"paper-close-{request.trade_order_id}",
+        exit_price=exit_price,
+        message="Paper position closed by lifecycle manager.",
+        raw_response={
+            "trade_order_id": request.trade_order_id,
+            "prediction_id": request.prediction_id,
+            "position_side": request.position_side,
+            "reason": request.reason,
+            "exit_price": exit_price,
         },
     )

@@ -1,9 +1,4 @@
-"""Persistence repository boundary.
-
-The existing `crypto_predictor.database` module remains as a compatibility
-facade for current callers. New code should depend on `PredictionRepository`
-and obtain an implementation through `get_repository()`.
-"""
+﻿"""Persistence repository boundary."""
 
 from __future__ import annotations
 
@@ -15,62 +10,31 @@ from crypto_predictor.models import MarketData, ModelType, Prediction
 
 
 class PredictionRepository(Protocol):
-    def init_schema(self) -> None:
-        ...
-
-    def save_prediction(self, market_data: MarketData, prediction: Prediction, model_type: ModelType) -> int:
-        ...
-
-    def count_predictions(self) -> int:
-        ...
-
-    def list_recent_predictions(self, limit: int = 50, offset: int = 0) -> list[Any]:
-        ...
-
-    def get_prediction_by_id(self, prediction_id: int | None) -> Any | None:
-        ...
-
-    def get_latest_prediction(self) -> Any | None:
-        ...
-
-    def get_latest_prediction_for_symbol(self, symbol: str) -> Any | None:
-        ...
-
-    def save_trade_order(self, prediction_id: int, result: OrderResult) -> int:
-        ...
-
-    def list_recent_trade_orders(self, limit: int = 50) -> list[Any]:
-        ...
-
+    def init_schema(self) -> None: ...
+    def save_prediction(self, market_data: MarketData, prediction: Prediction, model_type: ModelType) -> int: ...
+    def count_predictions(self) -> int: ...
+    def list_recent_predictions(self, limit: int = 50, offset: int = 0) -> list[Any]: ...
+    def get_prediction_by_id(self, prediction_id: int | None) -> Any | None: ...
+    def get_latest_prediction(self) -> Any | None: ...
+    def get_latest_prediction_for_symbol(self, symbol: str) -> Any | None: ...
+    def save_trade_order(self, prediction_id: int, result: OrderResult) -> int: ...
+    def list_recent_trade_orders(self, limit: int = 50) -> list[Any]: ...
+    def get_next_open_trade_order_expiry(self) -> str | None: ...
+    def update_trade_order_close(self, order_id: int, payload: dict[str, object]) -> None: ...
     def list_chart_predictions(
         self,
         symbol: str | None = None,
         limit: int = 100,
         start_utc: str | None = None,
         end_utc: str | None = None,
-    ) -> list[Any]:
-        ...
-
-    def get_overall_accuracy(self) -> dict[str, object]:
-        ...
-
-    def save_auto_run_log(self, payload: dict[str, object]) -> int:
-        ...
-
-    def count_auto_run_logs(self) -> int:
-        ...
-
-    def list_recent_auto_run_logs(self, limit: int = 50, offset: int = 0) -> list[Any]:
-        ...
-
-    def get_auto_run_log_stats(self) -> dict[str, object]:
-        ...
-
-    def save_user_advice_action(self, payload: dict[str, object]) -> int:
-        ...
-
-    def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]:
-        ...
+    ) -> list[Any]: ...
+    def get_overall_accuracy(self) -> dict[str, object]: ...
+    def save_auto_run_log(self, payload: dict[str, object]) -> int: ...
+    def count_auto_run_logs(self) -> int: ...
+    def list_recent_auto_run_logs(self, limit: int = 50, offset: int = 0) -> list[Any]: ...
+    def get_auto_run_log_stats(self) -> dict[str, object]: ...
+    def save_user_advice_action(self, payload: dict[str, object]) -> int: ...
+    def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]: ...
 
 
 class SQLitePredictionRepository:
@@ -79,48 +43,47 @@ class SQLitePredictionRepository:
 
     def init_schema(self) -> None:
         from crypto_predictor import database
-
         database.init_db(self.db_path)
 
     def save_prediction(self, market_data: MarketData, prediction: Prediction, model_type: ModelType) -> int:
         from crypto_predictor import database
-
         return database.save_prediction(market_data, prediction, model_type, db_path=self.db_path)
 
     def count_predictions(self) -> int:
         from crypto_predictor import database
-
         return database.count_predictions(db_path=self.db_path)
 
     def list_recent_predictions(self, limit: int = 50, offset: int = 0) -> list[Any]:
         from crypto_predictor import database
-
         return database.list_recent_predictions(db_path=self.db_path, limit=limit, offset=offset)
 
     def get_prediction_by_id(self, prediction_id: int | None) -> Any | None:
         from crypto_predictor import database
-
         return database.get_prediction_by_id(prediction_id, db_path=self.db_path)
 
     def get_latest_prediction(self) -> Any | None:
         from crypto_predictor import database
-
         return database.get_latest_prediction(db_path=self.db_path)
 
     def get_latest_prediction_for_symbol(self, symbol: str) -> Any | None:
         from crypto_predictor import database
-
         return database.get_latest_prediction_for_symbol(symbol, db_path=self.db_path)
 
     def save_trade_order(self, prediction_id: int, result: OrderResult) -> int:
         from crypto_predictor import database
-
         return database.save_trade_order(prediction_id, result, db_path=self.db_path)
 
     def list_recent_trade_orders(self, limit: int = 50) -> list[Any]:
         from crypto_predictor import database
-
         return database.list_recent_trade_orders(db_path=self.db_path, limit=limit)
+
+    def get_next_open_trade_order_expiry(self) -> str | None:
+        from crypto_predictor import database
+        return database.get_next_open_trade_order_expiry(db_path=self.db_path)
+
+    def update_trade_order_close(self, order_id: int, payload: dict[str, object]) -> None:
+        from crypto_predictor import database
+        return database.update_trade_order_close(order_id, payload, db_path=self.db_path)
 
     def list_chart_predictions(
         self,
@@ -130,7 +93,6 @@ class SQLitePredictionRepository:
         end_utc: str | None = None,
     ) -> list[Any]:
         from crypto_predictor import database
-
         return database.list_chart_predictions(
             db_path=self.db_path,
             symbol=symbol,
@@ -141,37 +103,30 @@ class SQLitePredictionRepository:
 
     def get_overall_accuracy(self) -> dict[str, object]:
         from crypto_predictor import database
-
         return database.get_overall_accuracy(db_path=self.db_path)
 
     def save_auto_run_log(self, payload: dict[str, object]) -> int:
         from crypto_predictor import database
-
         return database.save_auto_run_log(payload, db_path=self.db_path)
 
     def count_auto_run_logs(self) -> int:
         from crypto_predictor import database
-
         return database.count_auto_run_logs(db_path=self.db_path)
 
     def list_recent_auto_run_logs(self, limit: int = 50, offset: int = 0) -> list[Any]:
         from crypto_predictor import database
-
         return database.list_recent_auto_run_logs(db_path=self.db_path, limit=limit, offset=offset)
 
     def get_auto_run_log_stats(self) -> dict[str, object]:
         from crypto_predictor import database
-
         return database.get_auto_run_log_stats(db_path=self.db_path)
 
     def save_user_advice_action(self, payload: dict[str, object]) -> int:
         from crypto_predictor import database
-
         return database.save_user_advice_action(payload, db_path=self.db_path)
 
     def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]:
         from crypto_predictor import database
-
         return database.list_recent_user_advice_actions(db_path=self.db_path, limit=limit)
 
 
@@ -182,12 +137,10 @@ class PostgreSQLPredictionRepository:
     def init_schema(self) -> None:
         if not self.dsn:
             raise RuntimeError("POSTGRES_DSN is empty; set database.postgres_dsn in config.yaml")
-
         try:
             import psycopg
         except ImportError as exc:
             raise RuntimeError("PostgreSQL backend requires psycopg. Install with: pip install 'psycopg[binary]>=3.1'") from exc
-
         with psycopg.connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 for statement in POSTGRES_SCHEMA:
@@ -200,59 +153,24 @@ class PostgreSQLPredictionRepository:
             "still need to be implemented before DB_BACKEND=postgresql can run the app."
         )
 
-    def save_prediction(self, market_data: MarketData, prediction: Prediction, model_type: ModelType) -> int:
-        self._not_implemented()
-
-    def count_predictions(self) -> int:
-        self._not_implemented()
-
-    def list_recent_predictions(self, limit: int = 50, offset: int = 0) -> list[Any]:
-        self._not_implemented()
-
-    def get_prediction_by_id(self, prediction_id: int | None) -> Any | None:
-        self._not_implemented()
-
-    def get_latest_prediction(self) -> Any | None:
-        self._not_implemented()
-
-    def get_latest_prediction_for_symbol(self, symbol: str) -> Any | None:
-        self._not_implemented()
-
-    def save_trade_order(self, prediction_id: int, result: OrderResult) -> int:
-        self._not_implemented()
-
-    def list_recent_trade_orders(self, limit: int = 50) -> list[Any]:
-        self._not_implemented()
-
-    def list_chart_predictions(
-        self,
-        symbol: str | None = None,
-        limit: int = 100,
-        start_utc: str | None = None,
-        end_utc: str | None = None,
-    ) -> list[Any]:
-        self._not_implemented()
-
-    def get_overall_accuracy(self) -> dict[str, object]:
-        self._not_implemented()
-
-    def save_auto_run_log(self, payload: dict[str, object]) -> int:
-        self._not_implemented()
-
-    def count_auto_run_logs(self) -> int:
-        self._not_implemented()
-
-    def list_recent_auto_run_logs(self, limit: int = 50, offset: int = 0) -> list[Any]:
-        self._not_implemented()
-
-    def get_auto_run_log_stats(self) -> dict[str, object]:
-        self._not_implemented()
-
-    def save_user_advice_action(self, payload: dict[str, object]) -> int:
-        self._not_implemented()
-
-    def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]:
-        self._not_implemented()
+    def save_prediction(self, market_data: MarketData, prediction: Prediction, model_type: ModelType) -> int: self._not_implemented()
+    def count_predictions(self) -> int: self._not_implemented()
+    def list_recent_predictions(self, limit: int = 50, offset: int = 0) -> list[Any]: self._not_implemented()
+    def get_prediction_by_id(self, prediction_id: int | None) -> Any | None: self._not_implemented()
+    def get_latest_prediction(self) -> Any | None: self._not_implemented()
+    def get_latest_prediction_for_symbol(self, symbol: str) -> Any | None: self._not_implemented()
+    def save_trade_order(self, prediction_id: int, result: OrderResult) -> int: self._not_implemented()
+    def list_recent_trade_orders(self, limit: int = 50) -> list[Any]: self._not_implemented()
+    def get_next_open_trade_order_expiry(self) -> str | None: self._not_implemented()
+    def update_trade_order_close(self, order_id: int, payload: dict[str, object]) -> None: self._not_implemented()
+    def list_chart_predictions(self, symbol: str | None = None, limit: int = 100, start_utc: str | None = None, end_utc: str | None = None) -> list[Any]: self._not_implemented()
+    def get_overall_accuracy(self) -> dict[str, object]: self._not_implemented()
+    def save_auto_run_log(self, payload: dict[str, object]) -> int: self._not_implemented()
+    def count_auto_run_logs(self) -> int: self._not_implemented()
+    def list_recent_auto_run_logs(self, limit: int = 50, offset: int = 0) -> list[Any]: self._not_implemented()
+    def get_auto_run_log_stats(self) -> dict[str, object]: self._not_implemented()
+    def save_user_advice_action(self, payload: dict[str, object]) -> int: self._not_implemented()
+    def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]: self._not_implemented()
 
 
 def get_repository() -> PredictionRepository:
@@ -307,11 +225,20 @@ POSTGRES_SCHEMA = (
         take_profit_order_id TEXT,
         stop_loss_order_id TEXT,
         message TEXT NOT NULL,
-        raw_response TEXT NOT NULL
+        raw_response TEXT NOT NULL,
+        expires_at TEXT,
+        closed_at TEXT,
+        close_status TEXT NOT NULL DEFAULT 'open',
+        close_reason TEXT,
+        exit_price DOUBLE PRECISION,
+        close_order_id TEXT,
+        close_message TEXT NOT NULL DEFAULT '',
+        close_raw_response TEXT NOT NULL DEFAULT '{}'
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_predictions_pending ON predictions (actual_result_price, expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_trade_orders_prediction ON trade_orders (prediction_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_trade_orders_expiry ON trade_orders (close_status, expires_at)",
     """
     CREATE TABLE IF NOT EXISTS auto_run_logs (
         id BIGSERIAL PRIMARY KEY,

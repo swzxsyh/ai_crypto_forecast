@@ -1,10 +1,10 @@
-"""Binance 真实/测试网交易执行。"""
+﻿"""Binance live/testnet trading execution."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from crypto_predictor.broker.models import OrderRequest, OrderResult
+from crypto_predictor.broker.models import CloseOrderRequest, CloseOrderResult, OrderRequest, OrderResult
 from crypto_predictor.config import (
     BINANCE_API_KEY,
     BINANCE_MARKET_TYPE,
@@ -18,40 +18,18 @@ from crypto_predictor.config import (
 
 
 def execute_binance_order(request: OrderRequest, confirm: str | None = None) -> OrderResult:
-    """通过 ccxt 向 Binance 发送真实或测试网订单。"""
+    """Send a live/testnet entry order to Binance through ccxt."""
 
     if request.mode != "live":
-        raise ValueError("Binance broker 只接受 live 模式请求")
+        raise ValueError("Binance broker only accepts live mode requests")
 
     if not ENABLE_LIVE_TRADING:
-        raise RuntimeError("ENABLE_LIVE_TRADING 未开启，拒绝真实下单")
+        raise RuntimeError("ENABLE_LIVE_TRADING is disabled; refusing live order")
 
     if confirm != LIVE_CONFIRM_TEXT:
-        raise RuntimeError("真实下单确认文本不匹配，拒绝执行")
+        raise RuntimeError("Live trading confirmation text does not match; refusing order")
 
-    if not BINANCE_API_KEY or not BINANCE_SECRET:
-        raise RuntimeError("缺少 BINANCE_API_KEY 或 BINANCE_SECRET")
-
-    try:
-        import ccxt
-    except ImportError as exc:
-        raise RuntimeError("缺少 ccxt SDK，请先执行：pip install ccxt") from exc
-
-    exchange = ccxt.binance(
-        {
-            "apiKey": BINANCE_API_KEY,
-            "secret": BINANCE_SECRET,
-            "enableRateLimit": True,
-            "options": {
-                "defaultType": BINANCE_MARKET_TYPE,
-            },
-        }
-    )
-
-    if BINANCE_SANDBOX:
-        exchange.set_sandbox_mode(True)
-
-    exchange.load_markets()
+    exchange = build_binance_exchange()
     exchange.set_leverage(request.leverage, request.symbol)
 
     amount = float(exchange.amount_to_precision(request.symbol, request.amount))
@@ -107,10 +85,10 @@ def execute_binance_order(request: OrderRequest, confirm: str | None = None) -> 
         side=entry_side,
         amount=amount,
         leverage=request.leverage,
-        entry_order_id=str(entry_order.get("id") or entry_order.get("orderId") or ""),
+        entry_order_id=extract_order_id(entry_order),
         take_profit_order_id=extract_order_id(take_profit_order),
         stop_loss_order_id=extract_order_id(stop_loss_order),
-        message="Binance 订单已提交。",
+        message="Binance entry order submitted.",
         raw_response={
             "sandbox": BINANCE_SANDBOX,
             "entry_order": entry_order,
@@ -120,8 +98,80 @@ def execute_binance_order(request: OrderRequest, confirm: str | None = None) -> 
     )
 
 
+def close_binance_position(request: CloseOrderRequest) -> CloseOrderResult:
+    """Close a recorded Binance position with a reduce-only market order."""
+
+    if request.mode != "live":
+        raise ValueError("Binance broker only closes live mode requests")
+
+    if not ENABLE_LIVE_TRADING:
+        raise RuntimeError("ENABLE_LIVE_TRADING is disabled; refusing live close")
+
+    exchange = build_binance_exchange()
+    amount = float(exchange.amount_to_precision(request.symbol, request.amount))
+    close_side = "sell" if request.entry_side == "buy" else "buy"
+    params = {
+        **build_position_params(request.position_side),
+        "reduceOnly": True,
+        "newOrderRespType": "RESULT",
+    }
+
+    close_order = exchange.create_order(
+        symbol=request.symbol,
+        type="market",
+        side=close_side,
+        amount=amount,
+        price=None,
+        params=params,
+    )
+
+    return CloseOrderResult(
+        mode="live",
+        status=str(close_order.get("status", "submitted")),
+        exchange="binance",
+        symbol=request.symbol,
+        side=close_side,
+        amount=amount,
+        close_order_id=extract_order_id(close_order),
+        exit_price=extract_average_price(close_order),
+        message="Binance reduce-only close order submitted.",
+        raw_response={
+            "sandbox": BINANCE_SANDBOX,
+            "reason": request.reason,
+            "close_order": close_order,
+        },
+    )
+
+
+def build_binance_exchange():
+    if not BINANCE_API_KEY or not BINANCE_SECRET:
+        raise RuntimeError("Missing BINANCE_API_KEY or BINANCE_SECRET")
+
+    try:
+        import ccxt
+    except ImportError as exc:
+        raise RuntimeError("Missing ccxt SDK. Install with: pip install ccxt") from exc
+
+    exchange = ccxt.binance(
+        {
+            "apiKey": BINANCE_API_KEY,
+            "secret": BINANCE_SECRET,
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": BINANCE_MARKET_TYPE,
+            },
+        }
+    )
+
+    if BINANCE_SANDBOX:
+        exchange.set_sandbox_mode(True)
+
+    exchange.load_markets()
+    return exchange
+
+
 def build_position_params(position_side: str) -> dict[str, Any]:
-    """根据账户持仓模式构建下单参数。"""
+    """Build params for one-way or hedge position mode."""
 
     if POSITION_SIDE_MODE == "hedge":
         return {"positionSide": position_side}
@@ -129,8 +179,25 @@ def build_position_params(position_side: str) -> dict[str, Any]:
 
 
 def extract_order_id(order: dict[str, Any] | None) -> str | None:
-    """从 ccxt 返回中提取订单 ID。"""
-
     if not order:
         return None
     return str(order.get("id") or order.get("orderId") or "")
+
+
+def extract_average_price(order: dict[str, Any]) -> float | None:
+    for key in ("average", "avgPrice", "price"):
+        value = order.get(key)
+        if value not in (None, "", 0, "0"):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    info = order.get("info") or {}
+    for key in ("avgPrice", "price"):
+        value = info.get(key)
+        if value not in (None, "", 0, "0"):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return None

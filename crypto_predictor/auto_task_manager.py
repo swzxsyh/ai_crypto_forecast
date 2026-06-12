@@ -1,7 +1,8 @@
-"""Web 可控的自动任务管理器。"""
+"""Web-controlled auto task manager."""
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass
@@ -20,11 +21,17 @@ from crypto_predictor.config import DB_PATH, DEFAULT_LIMIT, DEFAULT_SYMBOL, DEFA
 from crypto_predictor.database import get_overall_accuracy, save_auto_run_log
 from crypto_predictor.infrastructure.task_status import default_task_status_store
 from crypto_predictor.time_utils import to_iso, utc_now
+from crypto_predictor.trade_lifecycle import close_expired_trade_orders, get_next_trade_order_expiry
+from crypto_predictor.validator import check_and_update_accuracy, get_next_pending_prediction_expiry
+
+logger = logging.getLogger(__name__)
+VALIDATION_GRACE_SECONDS = 2.0
+VALIDATION_IDLE_POLL_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
 class AutoTaskConfig:
-    """自动任务运行参数。"""
+    """Auto task runtime config."""
 
     interval_seconds: int
     symbols: tuple[str, ...]
@@ -40,7 +47,7 @@ class AutoTaskConfig:
 
 
 class AutoTaskManager:
-    """管理后台自动任务线程，支持启动、停止、状态查询。"""
+    """Manage the background auto task thread."""
 
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
@@ -57,7 +64,7 @@ class AutoTaskManager:
         self._config: AutoTaskConfig | None = None
 
     def start(self, config: AutoTaskConfig) -> dict[str, Any]:
-        """启动自动任务；已在运行则返回当前状态。"""
+        """Start auto task."""
 
         config = self._normalize_config(config)
 
@@ -94,7 +101,7 @@ class AutoTaskManager:
         return {"started": True, "status": self.get_status()}
 
     def stop(self) -> dict[str, Any]:
-        """停止自动任务线程。"""
+        """Stop auto task."""
 
         with self._lock:
             thread = self._thread
@@ -115,7 +122,7 @@ class AutoTaskManager:
         return {"stopped": True, "status": self.get_status()}
 
     def get_status(self) -> dict[str, Any]:
-        """获取当前自动任务状态。"""
+        """Return current auto task status."""
 
         with self._lock:
             config = self._config
@@ -162,8 +169,75 @@ class AutoTaskManager:
 
             elapsed = (cycle_finished - cycle_started).total_seconds()
             wait_seconds = max(0.0, config.interval_seconds - elapsed)
-            if self._stop_event.wait(timeout=wait_seconds):
+            if self._wait_until_next_cycle(config, wait_seconds):
                 break
+
+    def _wait_until_next_cycle(self, config: AutoTaskConfig, wait_seconds: float) -> bool:
+        """Wait for the next scheduled cycle while validating predictions at expiry time."""
+
+        cycle_deadline = time.monotonic() + max(0.0, wait_seconds)
+        while not self._stop_event.is_set():
+            remaining = cycle_deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+
+            step = remaining
+            seconds_to_validation = self._seconds_until_next_validation() if config.check_accuracy else None
+            seconds_to_trade_close = self._seconds_until_next_trade_close()
+            next_wakeup = min(
+                [item for item in (seconds_to_validation, seconds_to_trade_close) if item is not None],
+                default=None,
+            )
+            if next_wakeup is None:
+                step = min(step, VALIDATION_IDLE_POLL_SECONDS)
+            else:
+                step = min(step, next_wakeup)
+
+            if self._stop_event.wait(timeout=max(0.0, step)):
+                return True
+
+            if config.check_accuracy:
+                self._check_expired_predictions_between_cycles()
+            self._close_expired_trade_orders_between_cycles()
+
+        return True
+
+    def _seconds_until_next_validation(self) -> float | None:
+        next_expiry = get_next_pending_prediction_expiry(db_path=self.db_path)
+        if next_expiry is None:
+            return None
+        seconds = (next_expiry - utc_now()).total_seconds() + VALIDATION_GRACE_SECONDS
+        return max(0.0, seconds)
+
+    def _seconds_until_next_trade_close(self) -> float | None:
+        next_expiry = get_next_trade_order_expiry(db_path=self.db_path)
+        if next_expiry is None:
+            return None
+        seconds = (next_expiry - utc_now()).total_seconds() + VALIDATION_GRACE_SECONDS
+        return max(0.0, seconds)
+
+    def _check_expired_predictions_between_cycles(self) -> None:
+        try:
+            result = check_and_update_accuracy(db_path=self.db_path)
+            checked_count = int(result.get("checked_count") or 0)
+            if checked_count > 0:
+                logger.info("Expiry-time accuracy check updated predictions: %s", result)
+                default_task_status_store.set("auto_task", "accuracy_checked_at_expiry", **result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Expiry-time accuracy check failed: %s", exc)
+            default_task_status_store.set("auto_task", "accuracy_check_failed_at_expiry", error=str(exc))
+
+    def _close_expired_trade_orders_between_cycles(self) -> None:
+        try:
+            result = close_expired_trade_orders(db_path=self.db_path)
+            closed_count = int(result.get("closed_count") or 0)
+            error_count = int(result.get("error_count") or 0)
+            if closed_count > 0 or error_count > 0:
+                logger.info("Expiry-time trade lifecycle processed orders: %s", result)
+                default_task_status_store.set("auto_task", "trade_lifecycle_checked_at_expiry", **result)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Expiry-time trade lifecycle check failed: %s", exc)
+            default_task_status_store.set("auto_task", "trade_lifecycle_failed_at_expiry", error=str(exc))
 
     def _run_overlapping_loop(self, config: AutoTaskConfig) -> None:
         launched_cycles = 0
@@ -184,7 +258,7 @@ class AutoTaskManager:
             thread.start()
             active_threads.append(thread)
 
-            if self._stop_event.wait(timeout=config.interval_seconds):
+            if self._wait_until_next_cycle(config, config.interval_seconds):
                 break
 
         while active_threads and not self._stop_event.is_set():
@@ -332,7 +406,7 @@ class AutoTaskManager:
 
 
 def build_default_auto_config() -> AutoTaskConfig:
-    """构建默认自动任务配置。"""
+    """Build default auto task config."""
 
     return AutoTaskConfig(
         interval_seconds=AUTO_RUN_INTERVAL_SECONDS,

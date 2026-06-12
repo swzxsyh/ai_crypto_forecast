@@ -1,16 +1,18 @@
-<section class="table-wrap orders">
+﻿<section class="table-wrap orders">
   <div class="table-label"><h3>{{ t("table.orders") }}</h3></div>
   <table>
     <thead>
       <tr>
         <th>{{ t("col.created_at") }}</th>
         <th>{{ t("col.mode") }}</th>
-        <th>{{ t("col.exchange") }}</th>
         <th>{{ t("col.symbol") }}</th>
         <th>{{ t("col.direction") }}</th>
         <th>{{ t("col.amount") }}</th>
         <th>{{ t("col.leverage") }}</th>
         <th>{{ t("col.status") }}</th>
+        <th>Expires</th>
+        <th>Close</th>
+        <th>Exit</th>
         <th>{{ t("col.message") }}</th>
       </tr>
     </thead>
@@ -19,17 +21,22 @@
         <tr>
           <td class="js-utc-time" data-utc="{{ order.created_at }}">{{ order.created_at }}</td>
           <td>{{ order.mode }}</td>
-          <td>{{ order.exchange }}</td>
           <td>{{ order.symbol }}</td>
           <td>{{ order.side }}</td>
           <td>{{ "%.6f"|format(order.amount or 0) }}</td>
           <td>{{ order.leverage }}x</td>
           <td>{{ order.status }}</td>
-          <td>{{ order.message }}</td>
+          <td class="js-utc-time" data-utc="{{ order.expires_at or order.prediction_expires_at }}">{{ order.expires_at or order.prediction_expires_at or "-" }}</td>
+          <td>
+            {{ order.close_status or "open" }}
+            {% if order.close_reason %}<span class="muted">/{{ order.close_reason }}</span>{% endif %}
+          </td>
+          <td>{% if order.exit_price %}{{ "%.8f"|format(order.exit_price) }}{% else %}-{% endif %}</td>
+          <td>{{ order.close_message or order.message }}</td>
         </tr>
       {% else %}
         <tr>
-          <td colspan="9" class="empty">{{ t("empty.orders") }}</td>
+          <td colspan="11" class="empty">{{ t("empty.orders") }}</td>
         </tr>
       {% endfor %}
     </tbody>

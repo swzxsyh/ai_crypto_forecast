@@ -1,4 +1,4 @@
-"""SQLite 数据库访问层。"""
+﻿"""SQLite data access layer."""
 
 from __future__ import annotations
 
@@ -26,17 +26,26 @@ CONTRACT_COLUMNS: dict[str, str] = {
     "risk_reward_ratio": "REAL",
 }
 
+TRADE_ORDER_COLUMNS: dict[str, str] = {
+    "expires_at": "TEXT",
+    "closed_at": "TEXT",
+    "close_status": "TEXT NOT NULL DEFAULT 'open'",
+    "close_reason": "TEXT",
+    "exit_price": "REAL",
+    "close_order_id": "TEXT",
+    "close_message": "TEXT NOT NULL DEFAULT ''",
+    "close_raw_response": "TEXT NOT NULL DEFAULT '{}'",
+}
+
 
 def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
-    """创建 SQLite 连接，并让查询结果可以通过字段名访问。"""
-
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db(db_path: str = DB_PATH) -> None:
-    """初始化数据库表，并对旧表补齐新增字段。"""
+    """Initialize tables and backfill columns for older SQLite databases."""
 
     with get_connection(db_path) as conn:
         conn.execute(
@@ -71,6 +80,7 @@ def init_db(db_path: str = DB_PATH) -> None:
             """
         )
         ensure_contract_columns(conn)
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS trade_orders (
@@ -89,22 +99,24 @@ def init_db(db_path: str = DB_PATH) -> None:
                 stop_loss_order_id TEXT,
                 message TEXT NOT NULL,
                 raw_response TEXT NOT NULL,
+                expires_at TEXT,
+                closed_at TEXT,
+                close_status TEXT NOT NULL DEFAULT 'open',
+                close_reason TEXT,
+                exit_price REAL,
+                close_order_id TEXT,
+                close_message TEXT NOT NULL DEFAULT '',
+                close_raw_response TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY (prediction_id) REFERENCES predictions (id)
             )
             """
         )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_predictions_pending
-            ON predictions (actual_result_price, expires_at)
-            """
-        )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_trade_orders_prediction
-            ON trade_orders (prediction_id, created_at)
-            """
-        )
+        ensure_trade_order_columns(conn)
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_predictions_pending ON predictions (actual_result_price, expires_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trade_orders_prediction ON trade_orders (prediction_id, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trade_orders_expiry ON trade_orders (close_status, expires_at)")
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS auto_run_logs (
@@ -134,12 +146,8 @@ def init_db(db_path: str = DB_PATH) -> None:
             )
             """
         )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_auto_run_logs_started
-            ON auto_run_logs (cycle_started_at DESC)
-            """
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_auto_run_logs_started ON auto_run_logs (cycle_started_at DESC)")
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS user_advice_actions (
@@ -165,34 +173,26 @@ def init_db(db_path: str = DB_PATH) -> None:
             )
             """
         )
-        conn.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_user_advice_actions_created
-            ON user_advice_actions (created_at DESC)
-            """
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_advice_actions_created ON user_advice_actions (created_at DESC)")
         conn.commit()
 
 
 def ensure_contract_columns(conn: sqlite3.Connection) -> None:
-    """给旧版本数据库表补齐合约字段。"""
-
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
     for column_name, column_type in CONTRACT_COLUMNS.items():
         if column_name not in existing_columns:
             conn.execute(f"ALTER TABLE predictions ADD COLUMN {column_name} {column_type}")
 
 
-def save_prediction(
-    market_data: MarketData,
-    prediction: Prediction,
-    model_type: ModelType,
-    db_path: str = DB_PATH,
-) -> int:
-    """将一次预测写入数据库，返回新记录 ID。"""
+def ensure_trade_order_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(trade_orders)").fetchall()}
+    for column_name, column_type in TRADE_ORDER_COLUMNS.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE trade_orders ADD COLUMN {column_name} {column_type}")
 
+
+def save_prediction(market_data: MarketData, prediction: Prediction, model_type: ModelType, db_path: str = DB_PATH) -> int:
     init_db(db_path)
-
     prediction_time = utc_now()
     expires_at = prediction_time + parse_timeframe_to_timedelta(market_data.timeframe)
     raw_market_data = json.dumps(compact_market_data_for_prompt(market_data), ensure_ascii=False)
@@ -201,30 +201,11 @@ def save_prediction(
         cursor = conn.execute(
             """
             INSERT INTO predictions (
-                prediction_time,
-                expires_at,
-                exchange,
-                symbol,
-                timeframe,
-                current_price,
-                prediction_model,
-                prediction_direction,
-                target_price,
-                confidence,
-                position_side,
-                margin_amount,
-                leverage,
-                entry_price,
-                take_profit_price,
-                stop_loss_price,
-                notional_value,
-                expected_profit,
-                expected_loss,
-                risk_reward_ratio,
-                actual_result_price,
-                is_accurate,
-                checked_at,
-                raw_market_data
+                prediction_time, expires_at, exchange, symbol, timeframe, current_price,
+                prediction_model, prediction_direction, target_price, confidence,
+                position_side, margin_amount, leverage, entry_price, take_profit_price,
+                stop_loss_price, notional_value, expected_profit, expected_loss,
+                risk_reward_ratio, actual_result_price, is_accurate, checked_at, raw_market_data
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
             """,
@@ -256,12 +237,7 @@ def save_prediction(
         return int(cursor.lastrowid)
 
 
-def iter_expired_pending_predictions(
-    conn: sqlite3.Connection,
-    now_iso: str,
-) -> Iterable[sqlite3.Row]:
-    """查询已到期且尚未回填 actual_result_price 的预测记录。"""
-
+def iter_expired_pending_predictions(conn: sqlite3.Connection, now_iso: str) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
         SELECT *
@@ -275,8 +251,6 @@ def iter_expired_pending_predictions(
 
 
 def count_predictions(db_path: str = DB_PATH) -> int:
-    """Return the total number of prediction records."""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) AS total FROM predictions").fetchone()
@@ -284,8 +258,6 @@ def count_predictions(db_path: str = DB_PATH) -> int:
 
 
 def list_recent_predictions(db_path: str = DB_PATH, limit: int = 50, offset: int = 0) -> list[sqlite3.Row]:
-    """查询最近的预测记录，供 Web 看板使用。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
@@ -300,79 +272,43 @@ def list_recent_predictions(db_path: str = DB_PATH, limit: int = 50, offset: int
 
 
 def get_prediction_by_id(prediction_id: int | None, db_path: str = DB_PATH) -> sqlite3.Row | None:
-    """按 ID 查询预测记录。"""
-
     if prediction_id is None:
         return None
-
     init_db(db_path)
     with get_connection(db_path) as conn:
-        return conn.execute(
-            """
-            SELECT *
-            FROM predictions
-            WHERE id = ?
-            """,
-            (prediction_id,),
-        ).fetchone()
+        return conn.execute("SELECT * FROM predictions WHERE id = ?", (prediction_id,)).fetchone()
 
 
 def get_latest_prediction(db_path: str = DB_PATH) -> sqlite3.Row | None:
-    """查询最新一条预测记录。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
-        return conn.execute(
-            """
-            SELECT *
-            FROM predictions
-            ORDER BY prediction_time DESC
-            LIMIT 1
-            """
-        ).fetchone()
+        return conn.execute("SELECT * FROM predictions ORDER BY prediction_time DESC LIMIT 1").fetchone()
 
 
 def get_latest_prediction_for_symbol(symbol: str, db_path: str = DB_PATH) -> sqlite3.Row | None:
-    """按交易对查询最近一条预测记录。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
-            """
-            SELECT *
-            FROM predictions
-            WHERE symbol = ?
-            ORDER BY prediction_time DESC
-            LIMIT 1
-            """,
+            "SELECT * FROM predictions WHERE symbol = ? ORDER BY prediction_time DESC LIMIT 1",
             (symbol,),
         ).fetchone()
 
 
 def save_trade_order(prediction_id: int, result: OrderResult, db_path: str = DB_PATH) -> int:
-    """保存模拟或真实订单执行结果。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
+        prediction = conn.execute("SELECT expires_at FROM predictions WHERE id = ?", (prediction_id,)).fetchone()
+        if prediction is None:
+            raise RuntimeError(f"Prediction not found: {prediction_id}")
+        close_status = "open" if result.status not in {"error", "failed", "rejected"} else "error"
         cursor = conn.execute(
             """
             INSERT INTO trade_orders (
-                prediction_id,
-                created_at,
-                mode,
-                exchange,
-                symbol,
-                side,
-                amount,
-                leverage,
-                status,
-                entry_order_id,
-                take_profit_order_id,
-                stop_loss_order_id,
-                message,
-                raw_response
+                prediction_id, created_at, mode, exchange, symbol, side, amount,
+                leverage, status, entry_order_id, take_profit_order_id, stop_loss_order_id,
+                message, raw_response, expires_at, close_status, close_raw_response
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 prediction_id,
@@ -389,6 +325,9 @@ def save_trade_order(prediction_id: int, result: OrderResult, db_path: str = DB_
                 result.stop_loss_order_id,
                 result.message,
                 json.dumps(result.raw_response, ensure_ascii=False, default=str),
+                prediction["expires_at"],
+                close_status,
+                "{}",
             ),
         )
         conn.commit()
@@ -396,13 +335,12 @@ def save_trade_order(prediction_id: int, result: OrderResult, db_path: str = DB_
 
 
 def list_recent_trade_orders(db_path: str = DB_PATH, limit: int = 50) -> list[sqlite3.Row]:
-    """查询最近订单记录。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
             """
-            SELECT trade_orders.*, predictions.position_side, predictions.margin_amount
+            SELECT trade_orders.*, predictions.position_side, predictions.margin_amount,
+                   predictions.expires_at AS prediction_expires_at
             FROM trade_orders
             JOIN predictions ON predictions.id = trade_orders.prediction_id
             ORDER BY trade_orders.created_at DESC
@@ -412,6 +350,64 @@ def list_recent_trade_orders(db_path: str = DB_PATH, limit: int = 50) -> list[sq
         ).fetchall()
 
 
+def get_next_open_trade_order_expiry(db_path: str = DB_PATH) -> str | None:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT MIN(expires_at) AS next_expires_at
+            FROM trade_orders
+            WHERE close_status = 'open'
+              AND expires_at IS NOT NULL
+            """
+        ).fetchone()
+    return row["next_expires_at"] if row and row["next_expires_at"] else None
+
+
+def iter_expired_open_trade_orders(conn: sqlite3.Connection, now_iso: str) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT trade_orders.*, predictions.position_side, predictions.expires_at AS prediction_expires_at
+        FROM trade_orders
+        JOIN predictions ON predictions.id = trade_orders.prediction_id
+        WHERE trade_orders.close_status = 'open'
+          AND trade_orders.expires_at IS NOT NULL
+          AND trade_orders.expires_at <= ?
+        ORDER BY trade_orders.expires_at ASC
+        """,
+        (now_iso,),
+    ).fetchall()
+
+
+def update_trade_order_close(order_id: int, payload: dict[str, object], db_path: str = DB_PATH) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE trade_orders
+            SET closed_at = ?,
+                close_status = ?,
+                close_reason = ?,
+                exit_price = ?,
+                close_order_id = ?,
+                close_message = ?,
+                close_raw_response = ?
+            WHERE id = ?
+            """,
+            (
+                str(payload.get("closed_at") or to_iso(utc_now())),
+                str(payload.get("close_status") or "closed"),
+                payload.get("close_reason"),
+                payload.get("exit_price"),
+                payload.get("close_order_id"),
+                str(payload.get("close_message") or ""),
+                json.dumps(payload.get("close_raw_response") or {}, ensure_ascii=False, default=str),
+                order_id,
+            ),
+        )
+        conn.commit()
+
+
 def list_chart_predictions(
     db_path: str = DB_PATH,
     symbol: str | None = None,
@@ -419,8 +415,6 @@ def list_chart_predictions(
     start_utc: str | None = None,
     end_utc: str | None = None,
 ) -> list[sqlite3.Row]:
-    """查询图表需要的预测记录，按时间正序返回。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         filters: list[str] = []
@@ -447,70 +441,42 @@ def list_chart_predictions(
             """,
             params,
         ).fetchall()
-
     return list(reversed(rows))
 
 
 def get_overall_accuracy(db_path: str = DB_PATH) -> dict[str, object]:
-    """汇总数据库里所有已验证预测的方向准确率。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute(
             """
-            SELECT
-                COUNT(*) AS total_checked,
-                SUM(CASE WHEN is_accurate = 1 THEN 1 ELSE 0 END) AS total_accurate
+            SELECT COUNT(*) AS total_checked,
+                   SUM(CASE WHEN is_accurate = 1 THEN 1 ELSE 0 END) AS total_accurate
             FROM predictions
             WHERE is_accurate IS NOT NULL
             """
         ).fetchone()
-
     total_checked = int(row["total_checked"] or 0)
     total_accurate = int(row["total_accurate"] or 0)
-    overall_accuracy = (total_accurate / total_checked) if total_checked else None
-
     return {
         "total_checked": total_checked,
         "total_accurate": total_accurate,
-        "overall_accuracy": overall_accuracy,
+        "overall_accuracy": (total_accurate / total_checked) if total_checked else None,
     }
 
 
 def save_auto_run_log(payload: dict[str, object], db_path: str = DB_PATH) -> int:
-    """保存自动任务每轮执行日志。"""
-
     init_db(db_path)
-
     symbols = payload.get("symbols", [])
     details = payload.get("details", {})
-
     with get_connection(db_path) as conn:
         cursor = conn.execute(
             """
             INSERT INTO auto_run_logs (
-                cycle_started_at,
-                cycle_finished_at,
-                status,
-                interval_seconds,
-                symbols_json,
-                timeframe,
-                kline_limit,
-                model_type,
-                execute_paper,
-                check_accuracy,
-                predictions_created,
-                paper_orders_total,
-                paper_orders_ok,
-                paper_orders_error,
-                checked_count,
-                accurate_count,
-                direction_accuracy,
-                overall_checked,
-                overall_accurate,
-                overall_accuracy,
-                error_message,
-                details_json
+                cycle_started_at, cycle_finished_at, status, interval_seconds,
+                symbols_json, timeframe, kline_limit, model_type, execute_paper,
+                check_accuracy, predictions_created, paper_orders_total, paper_orders_ok,
+                paper_orders_error, checked_count, accurate_count, direction_accuracy,
+                overall_checked, overall_accurate, overall_accuracy, error_message, details_json
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -544,8 +510,6 @@ def save_auto_run_log(payload: dict[str, object], db_path: str = DB_PATH) -> int
 
 
 def count_auto_run_logs(db_path: str = DB_PATH) -> int:
-    """Return the total number of auto task log records."""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) AS total FROM auto_run_logs").fetchone()
@@ -553,11 +517,9 @@ def count_auto_run_logs(db_path: str = DB_PATH) -> int:
 
 
 def list_recent_auto_run_logs(db_path: str = DB_PATH, limit: int = 50, offset: int = 0) -> list[sqlite3.Row]:
-    """查询最近自动任务日志。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
-        rows = conn.execute(
+        return conn.execute(
             """
             SELECT *
             FROM auto_run_logs
@@ -566,35 +528,26 @@ def list_recent_auto_run_logs(db_path: str = DB_PATH, limit: int = 50, offset: i
             """,
             (limit, offset),
         ).fetchall()
-    return rows
 
 
 def get_auto_run_log_stats(db_path: str = DB_PATH) -> dict[str, object]:
-    """汇总自动任务运行情况。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute(
             """
-            SELECT
-                COUNT(*) AS total_cycles,
-                SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok_cycles,
-                SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS error_cycles,
-                MAX(cycle_started_at) AS last_cycle_started_at,
-                MAX(cycle_finished_at) AS last_cycle_finished_at,
-                AVG(CASE WHEN direction_accuracy IS NOT NULL THEN direction_accuracy END) AS avg_direction_accuracy
+            SELECT COUNT(*) AS total_cycles,
+                   SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok_cycles,
+                   SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS error_cycles,
+                   MAX(cycle_started_at) AS last_cycle_started_at,
+                   MAX(cycle_finished_at) AS last_cycle_finished_at,
+                   AVG(CASE WHEN direction_accuracy IS NOT NULL THEN direction_accuracy END) AS avg_direction_accuracy
             FROM auto_run_logs
             """
         ).fetchone()
-
-    total_cycles = int(row["total_cycles"] or 0)
-    ok_cycles = int(row["ok_cycles"] or 0)
-    error_cycles = int(row["error_cycles"] or 0)
-
     return {
-        "total_cycles": total_cycles,
-        "ok_cycles": ok_cycles,
-        "error_cycles": error_cycles,
+        "total_cycles": int(row["total_cycles"] or 0),
+        "ok_cycles": int(row["ok_cycles"] or 0),
+        "error_cycles": int(row["error_cycles"] or 0),
         "last_cycle_started_at": row["last_cycle_started_at"],
         "last_cycle_finished_at": row["last_cycle_finished_at"],
         "avg_direction_accuracy": row["avg_direction_accuracy"],
@@ -602,30 +555,15 @@ def get_auto_run_log_stats(db_path: str = DB_PATH) -> dict[str, object]:
 
 
 def save_user_advice_action(payload: dict[str, object], db_path: str = DB_PATH) -> int:
-    """保存用户建议操作记录。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         cursor = conn.execute(
             """
             INSERT INTO user_advice_actions (
-                created_at,
-                symbol,
-                principal,
-                prediction_id,
-                timeframe,
-                expires_at,
-                suggestion_side,
-                direction,
-                leverage,
-                margin_amount,
-                entry_price,
-                take_profit_price,
-                stop_loss_price,
-                notional_value,
-                expected_profit,
-                expected_loss,
-                note
+                created_at, symbol, principal, prediction_id, timeframe, expires_at,
+                suggestion_side, direction, leverage, margin_amount, entry_price,
+                take_profit_price, stop_loss_price, notional_value, expected_profit,
+                expected_loss, note
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
@@ -654,8 +592,6 @@ def save_user_advice_action(payload: dict[str, object], db_path: str = DB_PATH) 
 
 
 def list_recent_user_advice_actions(db_path: str = DB_PATH, limit: int = 50) -> list[sqlite3.Row]:
-    """查询最近的用户建议操作记录。"""
-
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
