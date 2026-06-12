@@ -20,6 +20,7 @@ from crypto_predictor.config import (
 logger = logging.getLogger(__name__)
 _EXCHANGE_CACHE_LOCK = threading.RLock()
 _EXCHANGE_CACHE: dict[str, Any] = {}
+_WARMUP_THREADS: dict[str, threading.Thread] = {}
 
 
 def build_exchange(exchange_id: str = DEFAULT_EXCHANGE_ID) -> Any:
@@ -82,6 +83,41 @@ def warm_exchange_market_cache(exchange_id: str = DEFAULT_EXCHANGE_ID) -> bool:
         return False
 
 
+
+
+def warm_exchange_market_cache_async(exchange_id: str = DEFAULT_EXCHANGE_ID) -> bool:
+    """Warm exchange markets in a background thread without blocking app startup."""
+
+    with _EXCHANGE_CACHE_LOCK:
+        exchange = _EXCHANGE_CACHE.get(exchange_id)
+        if exchange is not None and getattr(exchange, "markets", None):
+            return False
+
+        existing_thread = _WARMUP_THREADS.get(exchange_id)
+        if existing_thread is not None and existing_thread.is_alive():
+            return False
+
+        thread = threading.Thread(
+            target=_warm_exchange_market_cache_thread,
+            args=(exchange_id,),
+            name=f"exchange-market-warmup-{exchange_id}",
+            daemon=True,
+        )
+        _WARMUP_THREADS[exchange_id] = thread
+        thread.start()
+        logger.info("Exchange market cache warmup scheduled", extra={"exchange_id": exchange_id})
+        return True
+
+
+def _warm_exchange_market_cache_thread(exchange_id: str) -> None:
+    try:
+        warm_exchange_market_cache(exchange_id)
+    finally:
+        with _EXCHANGE_CACHE_LOCK:
+            thread = _WARMUP_THREADS.get(exchange_id)
+            if thread is threading.current_thread():
+                _WARMUP_THREADS.pop(exchange_id, None)
+
 def build_proxy_config() -> dict[str, str]:
     """构建 requests 使用的代理配置。"""
 
@@ -121,3 +157,5 @@ def is_local_port_open(port: int) -> bool:
             return True
     except OSError:
         return False
+
+

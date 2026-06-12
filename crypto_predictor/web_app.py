@@ -24,7 +24,7 @@ from crypto_predictor.config import (
     WEB_SECRET_KEY,
     WEB_TIMEZONE_OPTIONS,
 )
-from crypto_predictor.exchange import warm_exchange_market_cache
+from crypto_predictor.exchange import warm_exchange_market_cache_async
 from crypto_predictor.i18n import SUPPORTED_LANGUAGES, normalize_language, translate
 from crypto_predictor.infrastructure.database_backends import get_database_backend
 from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
@@ -70,7 +70,7 @@ def create_app() -> Flask:
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
     app.jinja_env.auto_reload = True
 
-    warm_exchange_market_cache()
+    warm_exchange_market_cache_async()
     manager = AutoTaskManager()
     app.extensions["auto_task_manager"] = manager
     maybe_start_auto_worker(app, manager)
@@ -496,3 +496,4 @@ def format_user_error(exc: Exception) -> str:
 
 
 app = create_app()
+
