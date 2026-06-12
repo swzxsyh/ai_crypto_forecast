@@ -1,4 +1,4 @@
-"""SQLite repository adapter."""
+﻿"""SQLite repository adapter."""
 
 from __future__ import annotations
 
@@ -83,6 +83,8 @@ class SQLitePredictionRepository:
         actual_price: float,
         is_accurate: bool,
         checked_at: str,
+        validation_reason: str | None = None,
+        validation_event_time: str | None = None,
     ) -> None:
         from crypto_predictor.database import get_connection, init_db
 
@@ -93,10 +95,12 @@ class SQLitePredictionRepository:
                 UPDATE predictions
                 SET actual_result_price = ?,
                     is_accurate = ?,
-                    checked_at = ?
+                    checked_at = ?,
+                    validation_reason = ?,
+                    validation_event_time = ?
                 WHERE id = ?
                 """,
-                (actual_price, 1 if is_accurate else 0, checked_at, prediction_id),
+                (actual_price, 1 if is_accurate else 0, checked_at, validation_reason, validation_event_time, prediction_id),
             )
             conn.commit()
 
@@ -149,3 +153,4 @@ class SQLitePredictionRepository:
     def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]:
         from crypto_predictor import database
         return database.list_recent_user_advice_actions(db_path=self.db_path, limit=limit)
+

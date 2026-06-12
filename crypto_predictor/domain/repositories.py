@@ -1,4 +1,4 @@
-"""Domain repository ports.
+﻿"""Domain repository ports.
 
 This module defines persistence contracts used by application services. Concrete
 SQL implementations live under `crypto_predictor.infrastructure.persistence`.
@@ -31,6 +31,8 @@ class PredictionRepository(Protocol):
         actual_price: float,
         is_accurate: bool,
         checked_at: str,
+        validation_reason: str | None = None,
+        validation_event_time: str | None = None,
     ) -> None: ...
     def list_expired_open_trade_orders(self, now_iso: str) -> list[Any]: ...
     def list_chart_predictions(
@@ -47,3 +49,4 @@ class PredictionRepository(Protocol):
     def get_auto_run_log_stats(self) -> dict[str, object]: ...
     def save_user_advice_action(self, payload: dict[str, object]) -> int: ...
     def list_recent_user_advice_actions(self, limit: int = 50) -> list[Any]: ...
+

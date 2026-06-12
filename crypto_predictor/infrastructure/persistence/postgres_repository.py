@@ -1,4 +1,4 @@
-"""PostgreSQL repository adapter."""
+﻿"""PostgreSQL repository adapter."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ class PostgreSQLPredictionRepository:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 for statement in POSTGRES_SCHEMA:
+                    cur.execute(statement)
+                for statement in POSTGRES_MIGRATIONS:
                     cur.execute(statement)
             conn.commit()
 
@@ -253,6 +255,8 @@ class PostgreSQLPredictionRepository:
         actual_price: float,
         is_accurate: bool,
         checked_at: str,
+        validation_reason: str | None = None,
+        validation_event_time: str | None = None,
     ) -> None:
         self.init_schema()
         with self._connect() as conn:
@@ -262,10 +266,12 @@ class PostgreSQLPredictionRepository:
                     UPDATE predictions
                     SET actual_result_price = %s,
                         is_accurate = %s,
-                        checked_at = %s
+                        checked_at = %s,
+                        validation_reason = %s,
+                        validation_event_time = %s
                     WHERE id = %s
                     """,
-                    (actual_price, 1 if is_accurate else 0, checked_at, prediction_id),
+                    (actual_price, 1 if is_accurate else 0, checked_at, validation_reason, validation_event_time, prediction_id),
                 )
             conn.commit()
 
@@ -496,6 +502,8 @@ POSTGRES_SCHEMA = (
         actual_result_price DOUBLE PRECISION,
         is_accurate INTEGER,
         checked_at TEXT,
+        validation_reason TEXT,
+        validation_event_time TEXT,
         raw_market_data TEXT NOT NULL
     )
     """,
@@ -580,4 +588,10 @@ POSTGRES_SCHEMA = (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_user_advice_actions_created ON user_advice_actions (created_at DESC)",
+)
+
+
+POSTGRES_MIGRATIONS = (
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS validation_reason TEXT",
+    "ALTER TABLE predictions ADD COLUMN IF NOT EXISTS validation_event_time TEXT",
 )

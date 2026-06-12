@@ -1,4 +1,4 @@
-"""MySQL 8 repository adapter."""
+﻿"""MySQL 8 repository adapter."""
 
 from __future__ import annotations
 
@@ -16,6 +16,12 @@ class MySQLPredictionRepository(PostgreSQLPredictionRepository):
             with conn.cursor() as cur:
                 for statement in MYSQL_SCHEMA:
                     cur.execute(statement)
+                for statement in MYSQL_MIGRATIONS:
+                    try:
+                        cur.execute(statement)
+                    except Exception as exc:
+                        if "Duplicate column" not in str(exc):
+                            raise
             conn.commit()
 
     def _connect(self):
@@ -256,6 +262,8 @@ MYSQL_SCHEMA = (
         actual_result_price DOUBLE,
         is_accurate INT,
         checked_at VARCHAR(64),
+        validation_reason VARCHAR(128),
+        validation_event_time VARCHAR(64),
         raw_market_data LONGTEXT NOT NULL,
         INDEX idx_predictions_pending (actual_result_price, expires_at),
         INDEX idx_predictions_time (prediction_time)
@@ -343,4 +351,10 @@ MYSQL_SCHEMA = (
         INDEX idx_user_advice_actions_created (created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+)
+
+
+MYSQL_MIGRATIONS = (
+    "ALTER TABLE predictions ADD COLUMN validation_reason VARCHAR(128)",
+    "ALTER TABLE predictions ADD COLUMN validation_event_time VARCHAR(64)",
 )

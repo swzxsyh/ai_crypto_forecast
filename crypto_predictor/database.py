@@ -1,4 +1,4 @@
-"""SQLite data access layer."""
+﻿"""SQLite data access layer."""
 
 from __future__ import annotations
 
@@ -36,6 +36,11 @@ def _configured_repository():
     from crypto_predictor.infrastructure.persistence.repository_factory import get_repository
 
     return get_repository()
+
+VALIDATION_COLUMNS: dict[str, str] = {
+    "validation_reason": "TEXT",
+    "validation_event_time": "TEXT",
+}
 
 TRADE_ORDER_COLUMNS: dict[str, str] = {
     "expires_at": "TEXT",
@@ -89,11 +94,14 @@ def init_db(db_path: str = DB_PATH) -> None:
                 actual_result_price REAL,
                 is_accurate INTEGER,
                 checked_at TEXT,
+                validation_reason TEXT,
+                validation_event_time TEXT,
                 raw_market_data TEXT NOT NULL
             )
             """
         )
         ensure_contract_columns(conn)
+        ensure_validation_columns(conn)
 
         conn.execute(
             """
@@ -197,6 +205,13 @@ def ensure_contract_columns(conn: sqlite3.Connection) -> None:
         if column_name not in existing_columns:
             conn.execute(f"ALTER TABLE predictions ADD COLUMN {column_name} {column_type}")
 
+
+
+def ensure_validation_columns(conn: sqlite3.Connection) -> None:
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+    for column_name, column_type in VALIDATION_COLUMNS.items():
+        if column_name not in existing_columns:
+            conn.execute(f"ALTER TABLE predictions ADD COLUMN {column_name} {column_type}")
 
 def ensure_trade_order_columns(conn: sqlite3.Connection) -> None:
     existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(trade_orders)").fetchall()}
@@ -653,3 +668,5 @@ def list_recent_user_advice_actions(db_path: str = DB_PATH, limit: int = 50) -> 
             """,
             (limit,),
         ).fetchall()
+
+
