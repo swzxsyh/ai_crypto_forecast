@@ -1,4 +1,4 @@
-{% extends "layouts/base.html" %}
+﻿{% extends "layouts/base.html" %}
 
 {% block title %}{{ t("app.title") }}{% endblock %}
 
@@ -15,10 +15,10 @@
     </div>
 
     <div class="tabs-nav">
-      <button class="tab-btn active" data-tab="predictions-tab">{{ t("tabs.predictions") }}</button>
-      <button class="tab-btn" data-tab="auto-tab">{{ t("tabs.auto") }}</button>
-      <button class="tab-btn" data-tab="advice-tab">{{ t("tabs.advice") }}</button>
-      <button class="tab-btn" data-tab="chart-tab">{{ t("tabs.chart") }}</button>
+      <button type="button" class="tab-btn active" data-tab="predictions-tab" onclick="window.activateDashboardTab && window.activateDashboardTab('predictions-tab')">{{ t("tabs.predictions") }}</button>
+      <button type="button" class="tab-btn" data-tab="auto-tab" onclick="window.activateDashboardTab && window.activateDashboardTab('auto-tab')">{{ t("tabs.auto") }}</button>
+      <button type="button" class="tab-btn" data-tab="advice-tab" onclick="window.activateDashboardTab && window.activateDashboardTab('advice-tab')">{{ t("tabs.advice") }}</button>
+      <button type="button" class="tab-btn" data-tab="chart-tab" onclick="window.activateDashboardTab && window.activateDashboardTab('chart-tab')">{{ t("tabs.chart") }}</button>
     </div>
 
     <div class="tabs-content">
@@ -52,5 +52,44 @@
 {% endblock %}
 
 {% block scripts %}
-  <script type="module" src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  <script>
+    (function dashboardTabFallback() {
+      function activateTab(tabId) {
+        if (!tabId || !document.getElementById(tabId)) return;
+
+        document.querySelectorAll(".tab-btn").forEach(function (button) {
+          button.classList.toggle("active", button.dataset.tab === tabId);
+        });
+        document.querySelectorAll(".tab-pane").forEach(function (pane) {
+          pane.classList.toggle("active", pane.id === tabId);
+        });
+
+        try { sessionStorage.setItem("dashboard_active_tab", tabId); } catch (error) {}
+        if (tabId === "chart-tab") {
+          setTimeout(function () { window.dispatchEvent(new Event("resize")); }, 100);
+        }
+      }
+
+      window.activateDashboardTab = activateTab;
+
+      document.querySelectorAll(".tab-btn").forEach(function (button) {
+        button.type = "button";
+        if (button.dataset.fallbackTabBound === "1") return;
+        button.dataset.fallbackTabBound = "1";
+        button.addEventListener("click", function (event) {
+          event.preventDefault();
+          activateTab(button.dataset.tab);
+        });
+      });
+
+      try {
+        var savedTab = sessionStorage.getItem("dashboard_active_tab");
+        if (savedTab && document.getElementById(savedTab)) activateTab(savedTab);
+      } catch (error) {}
+    })();
+  </script>
+  <script type="module" src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260612-tabs3"></script>
 {% endblock %}
+
+
+

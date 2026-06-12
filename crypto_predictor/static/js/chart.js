@@ -20,7 +20,6 @@ const chartTranslations = {
     pnl: "P/L USDT",
   },
 };
-
 function getActiveTimezone() {
   return document.body?.dataset?.timezone || "UTC";
 }
@@ -199,11 +198,11 @@ function buildChartOption(points) {
       },
     ],
     series: [
-      buildLineSeries(chartText("entry"), entryPrices, 0, "#2f6fdd", "solid"),
-      buildLineSeries(chartText("target"), targetPrices, 0, "#8d5cf6", "dashed"),
-      buildLineSeries(chartText("actual"), actualPrices, 0, "#202938", "solid"),
-      buildLineSeries(chartText("profit"), expectedProfits, 1, "#1f9d6a", "solid"),
-      buildLineSeries(chartText("loss"), expectedLosses, 1, "#d24b5a", "solid"),
+      buildLineSeries(chartText("entry"), entryPrices, 0, "#2563eb", "solid"),
+      buildLineSeries(chartText("target"), targetPrices, 0, "#0891b2", "dashed"),
+      buildLineSeries(chartText("actual"), actualPrices, 0, "#111827", "solid"),
+      buildLineSeries(chartText("profit"), expectedProfits, 1, "#087f5b", "solid"),
+      buildLineSeries(chartText("loss"), expectedLosses, 1, "#c24141", "solid"),
     ],
   };
 }
@@ -234,3 +233,4 @@ function buildLineSeries(name, data, yAxisIndex, color, lineType) {
         : undefined,
   };
 }
+

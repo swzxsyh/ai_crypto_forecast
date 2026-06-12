@@ -1,7 +1,10 @@
-<header class="topbar">
-  <div>
-    <h1>{{ t("app.title") }}</h1>
-    <p>{{ t("app.subtitle") }}</p>
+﻿<header class="topbar">
+  <div class="brand-block">
+    <img class="brand-icon" src="{{ url_for('static', filename='neural-network.svg') }}" alt="" aria-hidden="true">
+    <div>
+      <h1>{{ t("app.title") }}</h1>
+      <p>{{ t("app.subtitle") }}</p>
+    </div>
   </div>
   <div class="topbar-actions">
     <form method="post" action="/settings/language" class="timezone-form">

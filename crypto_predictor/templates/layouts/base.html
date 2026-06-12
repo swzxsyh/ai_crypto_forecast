@@ -1,9 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}合约模拟预测看板{% endblock %}</title>
+    <title>{% block title %}AI Crypto Predictor{% endblock %}</title>
+    <link rel="icon" href="{{ url_for('static', filename='neural-network.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
     {% block head_extra %}{% endblock %}
   </head>
@@ -14,3 +15,4 @@
     {% block scripts %}{% endblock %}
   </body>
 </html>
+

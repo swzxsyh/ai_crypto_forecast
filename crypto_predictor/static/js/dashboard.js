@@ -36,14 +36,7 @@ function renderUtcNodes() {
   });
 }
 
-const chartEl = document.getElementById("predictionChart");
-const chartSymbol = document.getElementById("chartSymbol");
-
 renderUtcNodes();
-
-if (chartEl && chartSymbol) {
-  createPredictionChart(chartEl, chartSymbol);
-}
 
 const refreshRaw = document.body?.dataset?.autoRefreshSeconds ?? "0";
 const refreshSeconds = Number.parseInt(refreshRaw, 10);
@@ -151,27 +144,27 @@ if (Number.isFinite(refreshSeconds) && refreshSeconds > 0) {
   schedule();
 }
 
-/* ─── Floating Header Tooltips ─────────────────────────────── */
+/* Floating header tooltips */
 let activeTooltip = null;
 
 document.querySelectorAll(".th-tip").forEach((tipEl) => {
   tipEl.addEventListener("mouseover", () => {
-    // 获取或创建 tooltip 容器
+    // Create a shared floating tooltip element.
     if (!activeTooltip) {
       activeTooltip = document.createElement("div");
       activeTooltip.className = "js-tooltip";
       document.body.appendChild(activeTooltip);
     }
 
-    // 设置 tooltip 内容
+    // Set tooltip text.
     const tipText = tipEl.getAttribute("data-tip") || "";
     activeTooltip.textContent = tipText;
 
-    // 计算位置（th-tip 元素上方）
+    // Position tooltip above the header icon.
     const rect = tipEl.getBoundingClientRect();
-    const tooltipHeight = 60; // 大致高度，调整可以更精准
-    const tooltipLeft = rect.left + rect.width / 2 - 120; // 160px 宽，居中对齐
-    const tooltipTop = rect.top - tooltipHeight - 8; // 上方空白 8px
+    const tooltipHeight = 60;
+    const tooltipLeft = rect.left + rect.width / 2 - 120;
+    const tooltipTop = rect.top - tooltipHeight - 8;
 
     activeTooltip.style.left = tooltipLeft + "px";
     activeTooltip.style.top = tooltipTop + "px";
@@ -185,37 +178,72 @@ document.querySelectorAll(".th-tip").forEach((tipEl) => {
   });
 });
 
-/* ─── Tab Switching ──────────────────────────────── */
+/* Tab switching */
 const ACTIVE_TAB_KEY = "dashboard_active_tab";
+let predictionChartController = null;
+
+function ensurePredictionChart() {
+  if (predictionChartController) {
+    return;
+  }
+
+  const chartEl = document.getElementById("predictionChart");
+  const chartSymbol = document.getElementById("chartSymbol");
+  if (!chartEl || !chartSymbol) {
+    return;
+  }
+
+  try {
+    if (!window.echarts) {
+      console.warn("ECharts is not loaded; chart panel will be skipped.");
+      return;
+    }
+    predictionChartController = createPredictionChart(chartEl, chartSymbol);
+  } catch (error) {
+    console.warn("Failed to initialize prediction chart", error);
+  }
+}
 
 function activateTab(tabId) {
-  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-  document.querySelectorAll(".tab-pane").forEach((pane) => pane.classList.remove("active"));
-
-  const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
-  const pane = document.getElementById(tabId);
-  if (btn) btn.classList.add("active");
-  if (pane) {
-    pane.classList.add("active");
-    if (tabId === "chart-tab") {
-      setTimeout(() => window.dispatchEvent(new Event("resize")), 100);
-    }
+  if (!tabId || !document.getElementById(tabId)) {
+    return;
   }
+
+  document.querySelectorAll(".tab-btn").forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tabId);
+  });
+  document.querySelectorAll(".tab-pane").forEach((pane) => {
+    pane.classList.toggle("active", pane.id === tabId);
+  });
+
+  if (tabId === "chart-tab") {
+    ensurePredictionChart();
+    setTimeout(() => window.dispatchEvent(new Event("resize")), 100);
+  }
+
   sessionStorage.setItem(ACTIVE_TAB_KEY, tabId);
 }
 
-// 恢复上次激活的 tab
-const savedTab = sessionStorage.getItem(ACTIVE_TAB_KEY);
-if (savedTab && document.getElementById(savedTab)) {
-  activateTab(savedTab);
+function bindTabs() {
+  document.querySelectorAll(".tab-btn").forEach((button) => {
+    if (button.dataset.tabBound === "1") {
+      return;
+    }
+    button.dataset.tabBound = "1";
+    button.type = "button";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      activateTab(button.dataset.tab);
+    });
+  });
+
+  const savedTab = sessionStorage.getItem(ACTIVE_TAB_KEY);
+  if (savedTab && document.getElementById(savedTab)) {
+    activateTab(savedTab);
+  }
 }
 
-document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    activateTab(btn.getAttribute("data-tab"));
-  });
-});
-
+bindTabs();
 function bindTableTooltips() {
   document.querySelectorAll(".th-tip").forEach((tipEl) => {
     if (tipEl.dataset.tooltipBound === "1") {
@@ -336,3 +364,4 @@ window.addEventListener("popstate", () => {
 });
 
 bindPaginationLinks();
+
