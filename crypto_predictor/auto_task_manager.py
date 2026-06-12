@@ -165,6 +165,7 @@ class AutoTaskManager:
             cycle_finished = self._run_cycle_once(config, cycle_started)
 
             if config.max_cycles > 0 and self._completed_cycles >= config.max_cycles:
+                self._drain_open_trade_orders_before_stop(config)
                 break
 
             elapsed = (cycle_finished - cycle_started).total_seconds()
@@ -266,6 +267,29 @@ class AutoTaskManager:
             if active_threads:
                 time.sleep(0.2)
 
+        if not self._stop_event.is_set() and config.max_cycles > 0 and launched_cycles >= config.max_cycles:
+            self._drain_open_trade_orders_before_stop(config)
+
+    def _drain_open_trade_orders_before_stop(self, config: AutoTaskConfig) -> None:
+        """After the last scheduled prediction cycle, keep lifecycle handling alive until open orders close."""
+
+        while not self._stop_event.is_set():
+            seconds_to_trade_close = self._seconds_until_next_trade_close()
+            if seconds_to_trade_close is None:
+                return
+
+            default_task_status_store.set(
+                "auto_task",
+                "waiting_for_trade_lifecycle",
+                completed_cycles=self._completed_cycles,
+                max_cycles=config.max_cycles,
+            )
+            if self._stop_event.wait(timeout=max(0.0, seconds_to_trade_close)):
+                return
+            if config.check_accuracy:
+                self._check_expired_predictions_between_cycles()
+            self._close_expired_trade_orders_between_cycles()
+
     def _run_cycle_once(self, config: AutoTaskConfig, cycle_started=None):
         cycle_started = cycle_started or utc_now()
         try:
@@ -304,6 +328,7 @@ class AutoTaskManager:
                     execute_live=config.execute_live,
                     check_accuracy=config.check_accuracy,
                     max_margin_per_trade=config.max_margin_per_trade,
+                    db_path=self.db_path,
                 )
 
                 paper_orders = cycle_result.get("paper_orders", [])

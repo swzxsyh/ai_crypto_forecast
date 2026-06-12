@@ -1,4 +1,4 @@
-﻿"""Scheduled auto runner: prediction, execution, and validation cycles."""
+"""Scheduled auto runner: prediction, execution, and validation cycles."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ from crypto_predictor.config import (
 )
 from crypto_predictor.database import init_db
 from crypto_predictor.service import run_predictions_for_symbols
+from crypto_predictor.time_utils import utc_now
+from crypto_predictor.trade_lifecycle import close_expired_trade_orders, get_next_trade_order_expiry
 from crypto_predictor.validator import check_and_update_accuracy
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,7 @@ def run_auto_cycle(
     execute_live: bool = AUTO_RUN_EXECUTE_LIVE,
     check_accuracy: bool = AUTO_RUN_CHECK_ACCURACY,
     max_margin_per_trade: float | None = None,
+    db_path: str = DB_PATH,
 ) -> dict[str, Any]:
     """Run one auto task cycle."""
 
@@ -80,6 +83,7 @@ def run_auto_cycle(
             timeframe=timeframe,
             limit=limit,
             model_type=model_type,
+            db_path=db_path,
         )
         logger.info("Prediction stage completed: created=%s", len(prediction_results))
     except Exception as exc:
@@ -100,6 +104,7 @@ def run_auto_cycle(
                     prediction_id=prediction_id,
                     mode="paper",
                     max_margin_per_trade=max_margin_per_trade,
+                    db_path=db_path,
                 )
                 paper_results.append(
                     {
@@ -134,6 +139,7 @@ def run_auto_cycle(
                     mode="live",
                     confirm="I_UNDERSTAND_LIVE_TRADING",
                     max_margin_per_trade=max_margin_per_trade,
+                    db_path=db_path,
                 )
                 live_results.append(
                     {
@@ -151,11 +157,13 @@ def run_auto_cycle(
     if check_accuracy:
         try:
             logger.info("Accuracy check stage started")
-            check_result = check_and_update_accuracy()
+            check_result = check_and_update_accuracy(db_path=db_path)
             logger.info("Accuracy check completed: %s", check_result)
         except Exception as exc:
             logger.error("Accuracy check failed: %s", exc)
             raise
+
+    lifecycle_result = close_expired_trade_orders(db_path=db_path)
 
     result = {
         "started_at": _now_iso(),
@@ -163,6 +171,7 @@ def run_auto_cycle(
         "paper_orders": paper_results,
         "live_orders": live_results,
         "accuracy_check": check_result,
+        "trade_lifecycle": lifecycle_result,
     }
     logger.info("================== Scheduled prediction cycle finished ==================")
     return result
@@ -203,6 +212,7 @@ def run_auto_loop(
                     execute_paper=execute_paper,
                     execute_live=execute_live,
                     check_accuracy=check_accuracy,
+                    db_path=db_path,
                 )
             except Exception as exc:  # noqa: BLE001
                 result = {
@@ -226,7 +236,7 @@ def run_auto_loop(
             sleep_seconds = max(0.0, interval_seconds - elapsed)
             if sleep_seconds > 0:
                 logger.info("Waiting %.2f seconds before next auto cycle", sleep_seconds)
-                time.sleep(sleep_seconds)
+                wait_between_cycles(sleep_seconds, check_accuracy=check_accuracy, db_path=db_path)
     except KeyboardInterrupt:
         interrupted = True
 
@@ -255,3 +265,25 @@ def resolve_auto_symbols(all_symbols: bool, symbols: Iterable[str] | None) -> tu
         if cleaned:
             return cleaned
     return (DEFAULT_SYMBOL,) if not AUTO_RUN_PREDICT_ALL_SYMBOLS else DEFAULT_SYMBOLS
+
+
+def wait_between_cycles(wait_seconds: float, check_accuracy: bool = True, db_path: str = DB_PATH) -> None:
+    """Wait between CLI auto cycles while processing expiry-time validation and trade lifecycle."""
+
+    deadline = time.time() + max(0.0, wait_seconds)
+    while True:
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return
+
+        seconds_to_trade_close: float | None = None
+        next_trade_expiry = get_next_trade_order_expiry(db_path=db_path)
+        if next_trade_expiry is not None:
+            seconds_to_trade_close = max(0.0, (next_trade_expiry - utc_now()).total_seconds() + 2.0)
+
+        step = min(remaining, seconds_to_trade_close if seconds_to_trade_close is not None else 60.0)
+        time.sleep(max(0.0, step))
+
+        if check_accuracy:
+            check_and_update_accuracy(db_path=db_path)
+        close_expired_trade_orders(db_path=db_path)
