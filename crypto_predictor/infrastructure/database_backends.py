@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from crypto_predictor.config import DB_BACKEND, DB_PATH, POSTGRES_DSN
+from crypto_predictor.config import DB_BACKEND, DB_PATH, MYSQL_DSN, POSTGRES_DSN
 
 
 class DatabaseBackend(Protocol):
@@ -38,7 +38,18 @@ class PostgreSQLBackend:
         return {"backend": self.name, "dsn": self.dsn}
 
 
+@dataclass(frozen=True)
+class MySQLBackend:
+    dsn: str = MYSQL_DSN
+    name: str = "mysql"
+
+    def describe(self) -> dict[str, str]:
+        return {"backend": self.name, "dsn": self.dsn}
+
+
 def get_database_backend() -> DatabaseBackend:
     if DB_BACKEND == "postgresql":
         return PostgreSQLBackend()
+    if DB_BACKEND == "mysql":
+        return MySQLBackend()
     return SQLiteBackend()

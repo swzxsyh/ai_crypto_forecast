@@ -103,6 +103,7 @@ def extract_env_values(data: dict[str, Any]) -> dict[str, Any]:
             "PREDICTION_DB_PATH": database_config.get("path"),
             "DB_BACKEND": database_config.get("backend"),
             "POSTGRES_DSN": database_config.get("postgres_dsn"),
+            "MYSQL_DSN": database_config.get("mysql_dsn"),
             "EXCHANGE_TIMEOUT_MS": exchange_config.get("timeout_ms"),
             "EXCHANGE_PROXY": exchange_config.get("proxy"),
             "EXCHANGE_HTTP_PROXY": exchange_config.get("http_proxy"),

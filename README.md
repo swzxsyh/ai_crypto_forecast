@@ -69,9 +69,10 @@ database:
   backend: "sqlite"
   path: "crypto_predictions.sqlite3"
   postgres_dsn: ""
+  mysql_dsn: ""
 ```
 
-`sqlite` is the current working repository implementation. `postgresql` is exposed as a backend boundary so the persistence layer can be replaced without changing prediction, web, or broker modules.
+`sqlite` is the default local backend. `postgresql` and `mysql` are implemented through the repository boundary for predictions, orders, auto logs, advice records, validation, and trade lifecycle data.
 
 Repository boundary:
 
@@ -82,7 +83,7 @@ repo = get_repository()
 repo.init_schema()
 ```
 
-For PostgreSQL schema creation on an empty database:
+For PostgreSQL on an empty database:
 
 ```powershell
 python -m pip install "psycopg[binary]>=3.1"
@@ -100,7 +101,26 @@ Then run:
 python main.py init-db
 ```
 
-PostgreSQL `init_schema()` is implemented. The app still uses the SQLite repository for runtime read/write methods until the remaining SQL methods are ported.
+PostgreSQL uses `psycopg` and PostgreSQL-specific SQL such as `%s` placeholders and `RETURNING id`.
+PostgreSQL uses `psycopg` and PostgreSQL-specific SQL such as `%s` placeholders and `RETURNING id`.
+
+For MySQL 8 on an empty database:
+
+```powershell
+python -m pip install "PyMySQL>=1.1.0"
+```
+
+```yaml
+database:
+  backend: "mysql"
+  mysql_dsn: "mysql://user:password@localhost:3306/aicrypto?charset=utf8mb4"
+```
+
+Then run:
+
+```powershell
+python main.py init-db
+```
 
 Market data resilience settings:
 
@@ -139,7 +159,7 @@ crypto_predictor/market_data.py market data payload builder
 crypto_predictor/sentiment.py   Fear & Greed Index provider
 crypto_predictor/ai/            AI provider implementations
 crypto_predictor/contract.py    simulated contract enrichment
-crypto_predictor/database.py    SQLite persistence
+crypto_predictor/database.py    persistence compatibility facade
 crypto_predictor/auto_runner.py scheduled cycle logic
 crypto_predictor/auto_task_manager.py web-controlled background task
 crypto_predictor/broker/        paper/live execution and risk checks

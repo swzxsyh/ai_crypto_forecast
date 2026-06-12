@@ -20,6 +20,7 @@ database:
   backend: "sqlite"
   path: "crypto_predictions.sqlite3"
   postgres_dsn: ""
+  mysql_dsn: ""
 
 exchange:
   # Binance 行情接口网络配置。访问 api.binance.com 超时时可提高 timeout 或配置代理。

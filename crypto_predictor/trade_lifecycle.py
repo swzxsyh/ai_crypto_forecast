@@ -9,36 +9,36 @@ from crypto_predictor.broker.binance_broker import close_binance_position
 from crypto_predictor.broker.models import CloseOrderRequest, CloseOrderResult
 from crypto_predictor.broker.paper_broker import close_paper_order
 from crypto_predictor.config import DB_PATH
-from crypto_predictor.database import (
-    get_connection,
-    get_next_open_trade_order_expiry,
-    init_db,
-    iter_expired_open_trade_orders,
-    update_trade_order_close,
-)
+from crypto_predictor.repositories import get_repository
 from crypto_predictor.time_utils import from_iso, to_iso, utc_now
 from crypto_predictor.validator import fetch_actual_price_at_or_after
 
 logger = logging.getLogger(__name__)
 
 
+def _repo(db_path: str = DB_PATH):
+    repo = get_repository()
+    if hasattr(repo, "db_path"):
+        repo.db_path = db_path
+    return repo
+
+
 def get_next_trade_order_expiry(db_path: str = DB_PATH):
     """Return earliest open trade order expiry as datetime."""
 
-    value = get_next_open_trade_order_expiry(db_path=db_path)
+    value = _repo(db_path).get_next_open_trade_order_expiry()
     return from_iso(value) if value else None
 
 
 def close_expired_trade_orders(db_path: str = DB_PATH) -> dict[str, Any]:
     """Close open trade orders whose prediction window has expired."""
 
-    init_db(db_path)
+    repo = _repo(db_path)
+    repo.init_schema()
     closed_count = 0
     error_count = 0
     results: list[dict[str, Any]] = []
-
-    with get_connection(db_path) as conn:
-        rows = list(iter_expired_open_trade_orders(conn, to_iso(utc_now())))
+    rows = list(repo.list_expired_open_trade_orders(to_iso(utc_now())))
 
     logger.info("Trade lifecycle scan: expired_open_orders=%s", len(rows))
 
@@ -46,7 +46,7 @@ def close_expired_trade_orders(db_path: str = DB_PATH) -> dict[str, Any]:
         order_id = int(row["id"])
         try:
             result = close_trade_order_row(row)
-            update_trade_order_close(
+            repo.update_trade_order_close(
                 order_id,
                 {
                     "closed_at": to_iso(utc_now()),
@@ -57,14 +57,13 @@ def close_expired_trade_orders(db_path: str = DB_PATH) -> dict[str, Any]:
                     "close_message": result.message,
                     "close_raw_response": result.raw_response,
                 },
-                db_path=db_path,
             )
             closed_count += 1
             results.append({"trade_order_id": order_id, "status": "closed", "exit_price": result.exit_price})
             logger.info("Trade order closed at expiry: id=%s symbol=%s mode=%s", order_id, row["symbol"], row["mode"])
         except Exception as exc:  # noqa: BLE001
             error_count += 1
-            update_trade_order_close(
+            repo.update_trade_order_close(
                 order_id,
                 {
                     "closed_at": to_iso(utc_now()),
@@ -73,7 +72,6 @@ def close_expired_trade_orders(db_path: str = DB_PATH) -> dict[str, Any]:
                     "close_message": str(exc),
                     "close_raw_response": {"error": str(exc)},
                 },
-                db_path=db_path,
             )
             results.append({"trade_order_id": order_id, "status": "error", "error": str(exc)})
             logger.exception("Trade order expiry close failed: id=%s", order_id)

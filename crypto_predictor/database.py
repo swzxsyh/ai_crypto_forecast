@@ -1,4 +1,4 @@
-﻿"""SQLite data access layer."""
+"""SQLite data access layer."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sqlite3
 from typing import Iterable
 
 from crypto_predictor.broker.models import OrderResult
-from crypto_predictor.config import DB_PATH
+from crypto_predictor.config import DB_BACKEND, DB_PATH
 from crypto_predictor.market_data import compact_market_data_for_prompt
 from crypto_predictor.models import MarketData, ModelType, Prediction
 from crypto_predictor.time_utils import parse_timeframe_to_timedelta, to_iso, utc_now
@@ -25,6 +25,17 @@ CONTRACT_COLUMNS: dict[str, str] = {
     "expected_loss": "REAL NOT NULL DEFAULT 0",
     "risk_reward_ratio": "REAL",
 }
+
+
+
+def _use_repository_backend() -> bool:
+    return DB_BACKEND != "sqlite"
+
+
+def _configured_repository():
+    from crypto_predictor.repositories import get_repository
+
+    return get_repository()
 
 TRADE_ORDER_COLUMNS: dict[str, str] = {
     "expires_at": "TEXT",
@@ -45,6 +56,9 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
 
 
 def init_db(db_path: str = DB_PATH) -> None:
+    if _use_repository_backend():
+        _configured_repository().init_schema()
+        return
     """Initialize tables and backfill columns for older SQLite databases."""
 
     with get_connection(db_path) as conn:
@@ -192,6 +206,8 @@ def ensure_trade_order_columns(conn: sqlite3.Connection) -> None:
 
 
 def save_prediction(market_data: MarketData, prediction: Prediction, model_type: ModelType, db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().save_prediction(market_data, prediction, model_type)
     init_db(db_path)
     prediction_time = utc_now()
     expires_at = prediction_time + parse_timeframe_to_timedelta(market_data.timeframe)
@@ -251,6 +267,8 @@ def iter_expired_pending_predictions(conn: sqlite3.Connection, now_iso: str) -> 
 
 
 def count_predictions(db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().count_predictions()
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) AS total FROM predictions").fetchone()
@@ -258,6 +276,8 @@ def count_predictions(db_path: str = DB_PATH) -> int:
 
 
 def list_recent_predictions(db_path: str = DB_PATH, limit: int = 50, offset: int = 0) -> list[sqlite3.Row]:
+    if _use_repository_backend():
+        return _configured_repository().list_recent_predictions(limit=limit, offset=offset)
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
@@ -272,6 +292,8 @@ def list_recent_predictions(db_path: str = DB_PATH, limit: int = 50, offset: int
 
 
 def get_prediction_by_id(prediction_id: int | None, db_path: str = DB_PATH) -> sqlite3.Row | None:
+    if _use_repository_backend():
+        return _configured_repository().get_prediction_by_id(prediction_id)
     if prediction_id is None:
         return None
     init_db(db_path)
@@ -280,12 +302,16 @@ def get_prediction_by_id(prediction_id: int | None, db_path: str = DB_PATH) -> s
 
 
 def get_latest_prediction(db_path: str = DB_PATH) -> sqlite3.Row | None:
+    if _use_repository_backend():
+        return _configured_repository().get_latest_prediction()
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute("SELECT * FROM predictions ORDER BY prediction_time DESC LIMIT 1").fetchone()
 
 
 def get_latest_prediction_for_symbol(symbol: str, db_path: str = DB_PATH) -> sqlite3.Row | None:
+    if _use_repository_backend():
+        return _configured_repository().get_latest_prediction_for_symbol(symbol)
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
@@ -295,6 +321,8 @@ def get_latest_prediction_for_symbol(symbol: str, db_path: str = DB_PATH) -> sql
 
 
 def save_trade_order(prediction_id: int, result: OrderResult, db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().save_trade_order(prediction_id, result)
     init_db(db_path)
     with get_connection(db_path) as conn:
         prediction = conn.execute("SELECT expires_at FROM predictions WHERE id = ?", (prediction_id,)).fetchone()
@@ -335,6 +363,8 @@ def save_trade_order(prediction_id: int, result: OrderResult, db_path: str = DB_
 
 
 def list_recent_trade_orders(db_path: str = DB_PATH, limit: int = 50) -> list[sqlite3.Row]:
+    if _use_repository_backend():
+        return _configured_repository().list_recent_trade_orders(limit=limit)
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
@@ -351,6 +381,8 @@ def list_recent_trade_orders(db_path: str = DB_PATH, limit: int = 50) -> list[sq
 
 
 def get_next_open_trade_order_expiry(db_path: str = DB_PATH) -> str | None:
+    if _use_repository_backend():
+        return _configured_repository().get_next_open_trade_order_expiry()
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute(
@@ -380,6 +412,8 @@ def iter_expired_open_trade_orders(conn: sqlite3.Connection, now_iso: str) -> li
 
 
 def update_trade_order_close(order_id: int, payload: dict[str, object], db_path: str = DB_PATH) -> None:
+    if _use_repository_backend():
+        return _configured_repository().update_trade_order_close(order_id, payload)
     init_db(db_path)
     with get_connection(db_path) as conn:
         conn.execute(
@@ -415,6 +449,8 @@ def list_chart_predictions(
     start_utc: str | None = None,
     end_utc: str | None = None,
 ) -> list[sqlite3.Row]:
+    if _use_repository_backend():
+        return _configured_repository().list_chart_predictions(symbol=symbol, limit=limit, start_utc=start_utc, end_utc=end_utc)
     init_db(db_path)
     with get_connection(db_path) as conn:
         filters: list[str] = []
@@ -445,6 +481,8 @@ def list_chart_predictions(
 
 
 def get_overall_accuracy(db_path: str = DB_PATH) -> dict[str, object]:
+    if _use_repository_backend():
+        return _configured_repository().get_overall_accuracy()
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute(
@@ -465,6 +503,8 @@ def get_overall_accuracy(db_path: str = DB_PATH) -> dict[str, object]:
 
 
 def save_auto_run_log(payload: dict[str, object], db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().save_auto_run_log(payload)
     init_db(db_path)
     symbols = payload.get("symbols", [])
     details = payload.get("details", {})
@@ -510,6 +550,8 @@ def save_auto_run_log(payload: dict[str, object], db_path: str = DB_PATH) -> int
 
 
 def count_auto_run_logs(db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().count_auto_run_logs()
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute("SELECT COUNT(*) AS total FROM auto_run_logs").fetchone()
@@ -517,6 +559,8 @@ def count_auto_run_logs(db_path: str = DB_PATH) -> int:
 
 
 def list_recent_auto_run_logs(db_path: str = DB_PATH, limit: int = 50, offset: int = 0) -> list[sqlite3.Row]:
+    if _use_repository_backend():
+        return _configured_repository().list_recent_auto_run_logs(limit=limit, offset=offset)
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(
@@ -531,6 +575,8 @@ def list_recent_auto_run_logs(db_path: str = DB_PATH, limit: int = 50, offset: i
 
 
 def get_auto_run_log_stats(db_path: str = DB_PATH) -> dict[str, object]:
+    if _use_repository_backend():
+        return _configured_repository().get_auto_run_log_stats()
     init_db(db_path)
     with get_connection(db_path) as conn:
         row = conn.execute(
@@ -555,6 +601,8 @@ def get_auto_run_log_stats(db_path: str = DB_PATH) -> dict[str, object]:
 
 
 def save_user_advice_action(payload: dict[str, object], db_path: str = DB_PATH) -> int:
+    if _use_repository_backend():
+        return _configured_repository().save_user_advice_action(payload)
     init_db(db_path)
     with get_connection(db_path) as conn:
         cursor = conn.execute(
@@ -592,6 +640,8 @@ def save_user_advice_action(payload: dict[str, object], db_path: str = DB_PATH) 
 
 
 def list_recent_user_advice_actions(db_path: str = DB_PATH, limit: int = 50) -> list[sqlite3.Row]:
+    if _use_repository_backend():
+        return _configured_repository().list_recent_user_advice_actions(limit=limit)
     init_db(db_path)
     with get_connection(db_path) as conn:
         return conn.execute(

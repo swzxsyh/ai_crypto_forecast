@@ -1,4 +1,4 @@
-"""Prediction expiry validation."""
+﻿"""Prediction expiry validation."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from datetime import datetime
 from typing import Any
 
 from crypto_predictor.config import DB_PATH, DEFAULT_EXCHANGE_ID, DEFAULT_SIDEWAYS_THRESHOLD_PCT
-from crypto_predictor.database import get_connection, init_db, iter_expired_pending_predictions
 from crypto_predictor.exchange import build_exchange
 from crypto_predictor.models import Direction
+from crypto_predictor.repositories import get_repository
 from crypto_predictor.time_utils import from_iso, to_iso, utc_now
 
 logger = logging.getLogger(__name__)
@@ -69,21 +69,18 @@ def judge_direction_accuracy(
     raise ValueError(f"Invalid prediction_direction: {prediction_direction}")
 
 
+def _repo(db_path: str = DB_PATH):
+    repo = get_repository()
+    if hasattr(repo, "db_path"):
+        repo.db_path = db_path
+    return repo
+
+
 def get_next_pending_prediction_expiry(db_path: str = DB_PATH) -> datetime | None:
     """Return the earliest expires_at among pending predictions."""
 
-    init_db(db_path)
-    with get_connection(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT MIN(expires_at) AS next_expires_at
-            FROM predictions
-            WHERE actual_result_price IS NULL
-            """
-        ).fetchone()
-
-    next_expires_at = row["next_expires_at"] if row else None
-    return from_iso(next_expires_at) if next_expires_at else None
+    value = _repo(db_path).get_next_pending_prediction_expiry()
+    return from_iso(value) if value else None
 
 
 def check_and_update_accuracy(
@@ -92,58 +89,46 @@ def check_and_update_accuracy(
 ) -> dict[str, Any]:
     """Check expired pending predictions and update accuracy using expiry-time price."""
 
-    init_db(db_path)
+    repo = _repo(db_path)
+    repo.init_schema()
     checked_count = 0
     accurate_count = 0
+    rows = list(repo.list_expired_pending_predictions(to_iso(utc_now())))
+    logger.info("Accuracy validation scan: expired_pending=%s", len(rows))
 
-    with get_connection(db_path) as conn:
-        rows = list(iter_expired_pending_predictions(conn, to_iso(utc_now())))
-        logger.info("Accuracy validation scan: expired_pending=%s", len(rows))
+    for row in rows:
+        expires_at = from_iso(row["expires_at"])
+        actual_price = fetch_actual_price_at_or_after(
+            symbol=row["symbol"],
+            expires_at=expires_at,
+            exchange_id=row["exchange"],
+        )
+        is_accurate = judge_direction_accuracy(
+            prediction_direction=row["prediction_direction"],
+            current_price=float(row["current_price"]),
+            actual_price=actual_price,
+            sideways_threshold_pct=sideways_threshold_pct,
+        )
 
-        for row in rows:
-            expires_at = from_iso(row["expires_at"])
-            actual_price = fetch_actual_price_at_or_after(
-                symbol=row["symbol"],
-                expires_at=expires_at,
-                exchange_id=row["exchange"],
-            )
-            is_accurate = judge_direction_accuracy(
-                prediction_direction=row["prediction_direction"],
-                current_price=float(row["current_price"]),
-                actual_price=actual_price,
-                sideways_threshold_pct=sideways_threshold_pct,
-            )
+        repo.update_prediction_accuracy(
+            prediction_id=int(row["id"]),
+            actual_price=actual_price,
+            is_accurate=bool(is_accurate),
+            checked_at=to_iso(utc_now()),
+        )
 
-            conn.execute(
-                """
-                UPDATE predictions
-                SET actual_result_price = ?,
-                    is_accurate = ?,
-                    checked_at = ?
-                WHERE id = ?
-                """,
-                (
-                    actual_price,
-                    1 if is_accurate else 0,
-                    to_iso(utc_now()),
-                    row["id"],
-                ),
-            )
-
-            checked_count += 1
-            accurate_count += 1 if is_accurate else 0
-            logger.info(
-                "Prediction validated: id=%s symbol=%s direction=%s expires_at=%s actual_price=%s accurate=%s",
-                row["id"],
-                row["symbol"],
-                row["prediction_direction"],
-                row["expires_at"],
-                actual_price,
-                bool(is_accurate),
-            )
-            time.sleep(0.2)
-
-        conn.commit()
+        checked_count += 1
+        accurate_count += 1 if is_accurate else 0
+        logger.info(
+            "Prediction validated: id=%s symbol=%s direction=%s expires_at=%s actual_price=%s accurate=%s",
+            row["id"],
+            row["symbol"],
+            row["prediction_direction"],
+            row["expires_at"],
+            actual_price,
+            bool(is_accurate),
+        )
+        time.sleep(0.2)
 
     direction_accuracy = (accurate_count / checked_count) if checked_count else None
     return {

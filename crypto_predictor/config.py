@@ -45,6 +45,7 @@ def parse_int(value: str | None, fallback: int) -> int:
 DB_BACKEND = os.getenv("DB_BACKEND", "sqlite").strip().lower() or "sqlite"
 DB_PATH = os.getenv("PREDICTION_DB_PATH", "crypto_predictions.sqlite3")
 POSTGRES_DSN = os.getenv("POSTGRES_DSN", "")
+MYSQL_DSN = os.getenv("MYSQL_DSN", "")
 EXCHANGE_TIMEOUT_MS = int(os.getenv("EXCHANGE_TIMEOUT_MS", "30000"))
 EXCHANGE_PROXY = os.getenv("EXCHANGE_PROXY", "")
 EXCHANGE_HTTP_PROXY = os.getenv("EXCHANGE_HTTP_PROXY", "")
